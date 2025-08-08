@@ -17,7 +17,6 @@ def simulation(plot: bool):
 
     while viewer.is_running():
       t_actual = t0 - time.time()
-
       mujoco.mj_step(model, data)
 
       current_position1 = data.qpos[0]
