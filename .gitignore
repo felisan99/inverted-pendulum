@@ -1,0 +1,13 @@
+# Entorno virtual
+venv/
+.venv/
+
+# Caché de Python
+__pycache__/
+*.pyc
+
+# Archivos temporales y de sistema
+.DS_Store
+
+# Imágenes generadas
+*.png
