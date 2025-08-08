@@ -11,3 +11,5 @@ __pycache__/
 
 # Imágenes generadas
 *.png
+
+images/

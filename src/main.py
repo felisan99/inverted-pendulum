@@ -20,5 +20,5 @@ if __name__ == "__main__":
         plt.ylabel('Position (rad)')
         plt.title('Joint Positions Over Time')
         plt.legend()
-        plt.savefig("trajectory_plot.png")
+        plt.savefig("images/trajectory_plot.png")
 

@@ -4,7 +4,6 @@ import time
 import trayectorias
 
 def simulation(plot: bool):
-  # Cargar el modelo
   #model = mujoco.MjModel.from_xml_path("my_model.xml")
   model = mujoco.MjModel.from_xml_path("pendulum_model.xml")
   data = mujoco.MjData(model)
@@ -38,6 +37,7 @@ def simulation(plot: bool):
 
       viewer.sync()
       time.sleep(0.01)
+      
   return trajectory1, trajectory2
 
 
