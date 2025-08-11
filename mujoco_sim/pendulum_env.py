@@ -62,13 +62,10 @@ class PendulumEnv(gym.Env):
     
     def compute_reward(self, obs: np.ndarray, action: np.ndarray) -> float:
         motor_pos_sin, motor_pos_cos, motor_vel, pend_pos_sin, pend_pos_cos, pend_vel = obs
-
         # Penalizacion por velocidades altas
         vel_penalty = motor_vel**2 + pend_vel**2
-
         # Penalizacion por error de posicion del pendulo
         pos_penalty = 1 - pend_pos_cos
-
         reward = - (2.0 * pos_penalty + 0.1 * vel_penalty)
         return reward
 
@@ -79,7 +76,7 @@ class PendulumEnv(gym.Env):
         self.data.ctrl[0] = action[0]
         mujoco.mj_step(self.model, self.data)
         obs = self.get_observation()
-        reward = self._compute_reward(obs, action)
+        reward = self.compute_reward(obs, action)
         self.current_step += 1
 
         done = self.current_step >= self.max_steps
