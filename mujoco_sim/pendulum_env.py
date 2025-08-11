@@ -37,19 +37,19 @@ class PendulumEnv(gym.Env):
     def get_observation(self):
         """
         Devuelve el estado actual [theta1, vel1, theta2, vel2]
-        theta1: Angulo de la primera articulacion
-        vel1: Velocidad de la primera articulacion
-        theta2: Angulo de la segunda articulacion
-        vel2: Velocidad de la segunda articulacion
+        theta_motor: Angulo de la primera articulacion
+        vel_motor: Velocidad de la primera articulacion
+        theta_pendulum: Angulo de la segunda articulacion
+        vel_pendulum: Velocidad de la segunda articulacion
 
         Se usa np.sin y np.cos para representar los angulos sin saltos de 0 a 360
         """
-        theta1 = self.data.qpos[0]
-        vel1 = self.data.qvel[0]
-        theta2 = self.data.qpos[1]
-        vel2 = self.data.qvel[1]
+        theta_motor = self.data.qpos[0]
+        vel_motor = self.data.qvel[0]
+        theta_pendulum = self.data.qpos[1]
+        vel_pendulum = self.data.qvel[1]
 
-        return np.array([np.sin(theta1), np.cos(theta1), vel1, np.sin(theta2), np.cos(theta2), vel2], dtype=np.float32)
+        return np.array([np.sin(theta_motor), np.cos(theta_motor), vel_motor, np.sin(theta_pendulum), np.cos(theta_pendulum), vel_pendulum], dtype=np.float32)
     
     def reset(self, *, seed = None, options = None):
         # Por convencion
@@ -60,9 +60,17 @@ class PendulumEnv(gym.Env):
         obs = self.get_observation()
         return obs, {}
     
-    def _compute_reward(self, obs: np.ndarray, action: np.ndarray) -> float:
-        # HAY QUE VER ACA QUE ES LO QUE QUIERO DEVOLVER COMO RECOMPENSA
-        return 0
+    def compute_reward(self, obs: np.ndarray, action: np.ndarray) -> float:
+        motor_pos_sin, motor_pos_cos, motor_vel, pend_pos_sin, pend_pos_cos, pend_vel = obs
+
+        # Penalizacion por velocidades altas
+        vel_penalty = motor_vel**2 + pend_vel**2
+
+        # Penalizacion por error de posicion del pendulo
+        pos_penalty = 1 - pend_pos_cos
+
+        reward = - (2.0 * pos_penalty + 0.1 * vel_penalty)
+        return reward
 
     def step(self, action: np.ndarray):
         # Asegura que la accion es valida
