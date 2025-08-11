@@ -2,10 +2,13 @@ import mujoco
 import mujoco.viewer
 import time
 import trayectorias
+from pathlib import Path
 
 def simulation(plot: bool):
-  #model = mujoco.MjModel.from_xml_path("my_model.xml")
-  model = mujoco.MjModel.from_xml_path("pendulum_model.xml")
+  ROOT_DIR = Path(__file__).resolve().parent.parent
+  MODEL_PATH = ROOT_DIR / "models" / "pendulum_model.xml"
+
+  model = mujoco.MjModel.from_xml_path(str(MODEL_PATH))
   data = mujoco.MjData(model)
 
   trajectory1 = []
