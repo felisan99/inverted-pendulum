@@ -1,7 +1,7 @@
 import mujoco
 import mujoco.viewer
 import time
-import trayectorias
+import mujoco_sim.trayectorias as trayectorias
 from pathlib import Path
 
 def simulation(plot: bool):
