@@ -3,6 +3,7 @@ import mujoco_sim.pendulum_env as pendulum_env
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import time as time
 
 matplotlib.use('Agg')
 
@@ -21,6 +22,19 @@ matplotlib.use('Agg')
 #     plt.title('Joint Positions Over Time')
 #     plt.legend()
 #     plt.savefig("images/trajectory_plot.png")
+
+# Create an instance of the PendulumEnv
+env = pendulum_env.PendulumEnv(render_mode="human", max_steps=1000)
+env.render()
+# Reset the environment to get the initial observation
+obs, _ = env.reset()
+print("Initial Observation:", obs)
+# Take a step in the environment with a random action
+action = env.action_space.sample()
+obs, reward, terminated, truncated, info = env.step(action)
+print("Observation after step:", obs)
+
+time.sleep(10)  # Wait for 2 seconds to visualize the environment
 
 
 

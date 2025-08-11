@@ -3,6 +3,7 @@ from pathlib import Path
 import mujoco
 from gymnasium import spaces
 import numpy as np
+import mujoco.viewer
 
 class PendulumEnv(gym.Env):
     def __init__(self, model_path: str | None = None, render_mode: str = "human", max_steps: int = 1000):
@@ -82,9 +83,9 @@ class PendulumEnv(gym.Env):
             return
 
         if self.viewer is None:
-            self.viewer = mujoco.viewer.launch_passive(self.model, self.data, mode=self.render_mode)
+            self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
         
-        mujoco.viewer.sync(self.viewer, self.data)        
+        self.viewer.sync()       
 
     def close(self):
         if self.viewer is not None:
