@@ -13,10 +13,9 @@ def train(*, max_timesteps = 1_000, total_timesteps = 10_000):
     model.learn(total_timesteps=total_timesteps, progress_bar=True, reset_num_timesteps=False)
 
     # Guarda el modelo entrenado
-    models_dir = Path(__file__).resolve().parent / "models"
-    models_dir.mkdir(parents=True, exist_ok=True)
-    model_path = models_dir / "ppo_model"
-    model.save(model_path)
+    ROOT_DIR = Path(__file__).resolve().parent.parent
+    models_dir = ROOT_DIR / "models"
+    model.save(models_dir / "ppo_agent")
 
     # Cierra el entorno
     env.close()
