@@ -12,7 +12,7 @@ class PendulumEnv(gym.Env):
         # Si no pasa la ruta al modelo se usa la ruta por defecto
         if model_path is None:
             ROOT_DIR = Path(__file__).resolve().parent.parent
-            model_path = ROOT_DIR / "models" / "pendulum_model.xml"
+            model_path = ROOT_DIR / "mujoco_sim" / "xml_models" / "pendulum_model.xml"
         
         # Verifica que el archivo del modelo existe
         model_path = Path(model_path).resolve()
@@ -24,7 +24,7 @@ class PendulumEnv(gym.Env):
         self.data = mujoco.MjData(self.model)
 
         # Define espacio de acciones y observaciones
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)    
+        self.action_space = spaces.Box(low=-5.0, high=5.0, shape=(1,), dtype=np.float32)    
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
 
         # Variables internas
@@ -54,9 +54,19 @@ class PendulumEnv(gym.Env):
     def reset(self, *, seed = None, options = None):
         # Por convencion
         super().reset(seed=seed)
-
-        self.data = mujoco.MjData(self.model)
         self.current_step = 0
+        
+        self.data.qpos[:] = 0.0
+        self.data.qvel[:] = 0.0
+
+        # Randomiza la posicion inicial del pendulo
+        random_angle = self.np_random.uniform(low=-np.pi, high=np.pi)
+        self.data.qpos[0] = 0.0
+        self.data.qpos[1] = random_angle
+
+        # Avanzar un paso para que los cambios tengan efecto
+        mujoco.mj_step(self.model, self.data)
+        
         obs = self.get_observation()
         return obs, {}
     

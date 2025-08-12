@@ -2,3 +2,4 @@ mujoco
 matplotlib
 numpy
 gymnasium[mujoco]
+stable-baselines3[extra]
