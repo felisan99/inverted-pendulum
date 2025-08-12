@@ -25,7 +25,7 @@ class PendulumEnv(gym.Env):
 
         # Define espacio de acciones y observaciones
         self.action_space = spaces.Box(low=-5.0, high=5.0, shape=(1,), dtype=np.float32)    
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
 
         # Variables internas
         self.render_mode = render_mode
