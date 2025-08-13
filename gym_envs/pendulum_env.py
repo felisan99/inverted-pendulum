@@ -7,7 +7,7 @@ import mujoco.viewer
 import time
 
 # Paso tipico en motores Nema
-STEP_ANGLE = np.deg2rad(1.8)
+STEP_ANGLE = np.deg2rad(30)
 
 class PendulumEnv(gym.Env):
     def __init__(self, model_path: str | None = None, render_mode: str = "human", max_steps: int = 1000):
@@ -60,7 +60,14 @@ class PendulumEnv(gym.Env):
         theta_pendulum = self.data.qpos[1]
         vel_pendulum = self.data.qvel[1]
 
-        return np.array([np.sin(theta_motor), np.cos(theta_motor), vel_motor, np.sin(theta_pendulum), np.cos(theta_pendulum), vel_pendulum], dtype=np.float32)
+        return np.array(
+            [np.sin(theta_motor), 
+            np.cos(theta_motor), 
+            vel_motor, 
+            np.sin(theta_pendulum), 
+            np.cos(theta_pendulum), 
+            vel_pendulum], 
+            dtype=np.float32)
     
     def reset(self, *, seed = None, options = None):
         # Por convencion
@@ -71,7 +78,7 @@ class PendulumEnv(gym.Env):
         self.data.qvel[:] = 0.0
 
         # Randomiza la posicion inicial del pendulo
-        random_angle = self.np_random.uniform(low=-np.pi, high=np.pi)
+        random_angle = self.np_random.uniform(low=-0.1, high=0.1)
         self.data.qpos[0] = 0.0
         self.data.qpos[1] = random_angle
 
@@ -111,7 +118,7 @@ class PendulumEnv(gym.Env):
 
         done = self.current_step >= self.max_steps
 
-        return obs, reward, done, {}
+        return obs, reward, done, False, {}
     
     def render(self):
         if self.render_mode != "human":
