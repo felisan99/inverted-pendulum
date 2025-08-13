@@ -6,6 +6,9 @@ import numpy as np
 import mujoco.viewer
 import time
 
+# Paso tipico en motores Nema
+STEP_ANGLE = np.deg2rad(1.8)
+
 class PendulumEnv(gym.Env):
     def __init__(self, model_path: str | None = None, render_mode: str = "human", max_steps: int = 1000):
         super().__init__()
@@ -25,7 +28,14 @@ class PendulumEnv(gym.Env):
         self.data = mujoco.MjData(self.model)
 
         # Define espacio de acciones y observaciones
-        self.action_space = spaces.Box(low=-100, high=100, shape=(1,), dtype=np.float32)    
+        """
+            Espacion de acciones mas parecido a un Nema
+            0 -> No mover
+            1 -> CW
+            2 -> CCW
+        """
+        self.action_space = spaces.Discrete(3)
+        
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
 
         # Variables internas
@@ -82,9 +92,17 @@ class PendulumEnv(gym.Env):
 
     def step(self, action: np.ndarray):
         # Asegura que la accion es valida
-        action = np.clip(action, self.action_space.low, self.action_space.high)
+        match action:
+            case 0:
+                # No mover
+                self.data.ctrl[0] = 0.0
+            case 1:
+                # Mover en sentido horario
+                self.data.ctrl[0] = STEP_ANGLE + self.data.qpos[0]
+            case 2:
+                # Mover en sentido antihorario
+                self.data.ctrl[0] = -STEP_ANGLE + self.data.qpos[0]
         
-        self.data.ctrl[0] = action[0]
         mujoco.mj_step(self.model, self.data)
         obs = self.get_observation()
         reward = self.compute_reward(obs, action)
@@ -93,7 +111,7 @@ class PendulumEnv(gym.Env):
 
         done = self.current_step >= self.max_steps
 
-        return obs, reward, done, False, {}
+        return obs, reward, done, {}
     
     def render(self):
         if self.render_mode != "human":
