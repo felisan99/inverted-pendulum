@@ -25,10 +25,10 @@ def show_model():
     models_dir = ROOT_DIR / "models"
     model = PPO.load(models_dir / "ppo_agent")
 
-    env = PendulumEnv(render_mode="human", max_steps=1000)
+    env = PendulumEnv(render_mode="human", max_steps=2000)
     obs, info = env.reset()
 
-    for i in range(1000):
+    for i in range(env.max_steps):
         action, _ = model.predict(obs)
         #if i == 500:
             #env.data.qvel[1] += 1.2

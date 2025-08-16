@@ -10,7 +10,7 @@ import time
 STEP_ANGLE = np.deg2rad(1.8)
 
 class PendulumEnv(gym.Env):
-    def __init__(self, model_path: str | None = None, render_mode: str = "human", max_steps: int = 1000):
+    def __init__(self, model_path: str | None = None, render_mode: str = "human", max_steps: int = 2000):
         super().__init__()
         
         # Si no pasa la ruta al modelo se usa la ruta por defecto
@@ -90,7 +90,6 @@ class PendulumEnv(gym.Env):
     
     def compute_reward(self, obs: np.ndarray, action: np.ndarray) -> float:
         motor_pos_sin, motor_pos_cos, motor_vel, pend_pos_sin, pend_pos_cos, pend_vel = obs
-        
         
         # Penalizacion por error de posicion del pendulo, bueno cercano a cero
         pos_penalty = 1 - pend_pos_cos
