@@ -7,7 +7,7 @@ import mujoco.viewer
 import time
 
 # Paso tipico en motores Nema
-STEP_ANGLE = np.deg2rad(30)
+STEP_ANGLE = np.deg2rad(1.8)
 
 class PendulumEnv(gym.Env):
     def __init__(self, model_path: str | None = None, render_mode: str = "human", max_steps: int = 1000):
@@ -127,7 +127,8 @@ class PendulumEnv(gym.Env):
             self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
         
         self.viewer.sync()
-        time.sleep(0.004)       
+        #time.sleep(0.01)
+        time.sleep(self.model.opt.timestep)
 
     def close(self):
         if self.viewer is not None:

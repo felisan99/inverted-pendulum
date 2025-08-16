@@ -30,8 +30,8 @@ def show_model():
 
     for i in range(1000):
         action, _ = model.predict(obs)
-        if i == 500:
-            env.data.qvel[1] += 1.2
+        #if i == 500:
+            #env.data.qvel[1] += 1.2
         obs, reward, done, truncated, info = env.step(action)        
     
     env.close()
