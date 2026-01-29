@@ -2,6 +2,9 @@
 venv/
 .venv/
 
+# Configuracion de IDE
+.vscode/
+
 # Caché de Python
 __pycache__/
 *.pyc
@@ -13,3 +16,6 @@ __pycache__/
 *.png
 
 images/
+
+# Modelo
+model
