@@ -3,7 +3,6 @@ from pathlib import Path
 import mujoco
 from gymnasium import spaces
 import numpy as np
-import mujoco.viewer
 import mujoco_viewer
 import time
 
@@ -20,7 +19,7 @@ class PendulumEnv(gym.Env):
         # Si no pasa la ruta al modelo se usa la ruta por defecto
         if model_path is None:
             ROOT_DIR = Path(__file__).resolve().parent.parent
-            model_path = ROOT_DIR / "mujoco_sim" / "xml_models" / "pendulum_model.xml"
+            model_path = ROOT_DIR / "mujoco_sim" / "xml_models" / "pendulum_model_v2.xml"
         
         # Verifica que el archivo del modelo existe
         model_path = Path(model_path).resolve()
@@ -41,7 +40,8 @@ class PendulumEnv(gym.Env):
         self.viewer = None
         self.max_steps = int(max_steps)
         self.current_step = 0
-    
+        self.render_frequency = 10
+
     # HAY QUE VER ACA QUE ES LO QUE QUIERO DEVOLVER COMO OBSERVACION
     def get_observation(self):
         """
@@ -131,23 +131,44 @@ class PendulumEnv(gym.Env):
         self.render()
 
         done = self.current_step >= self.max_steps
+        
+        # Info extra para debugging
+        info = {
+            "torque": torque,
+            "voltage": voltage,
+            "rpm_motor": (avg_omega * 60) / (2 * np.pi)
+        }
 
-        return obs, reward, done, False, {}
+        return obs, reward, done, False, info
     
     def render(self):
         if self.render_mode != "human":
             return
+        
+        # Inicializar viewer si no existe
         if self.viewer is None:
             self.viewer = mujoco_viewer.MujocoViewer(self.model, self.data)
+            self.last_render_time = time.time()
         
-        self.viewer.render()
-        time.sleep(self.model.opt.timestep)
+        # Solo actualizar la interfaz gráfica cada N pasos para evitar "slow motion"
+        if self.current_step % self.render_frequency == 0:
+            self.viewer.render()
+            
+            # Sincronización para Tiempo Real (Evitar cámara rápida)
+            # Tiempo que debió pasar en simulación durante estos N pasos
+            sim_time_expected = self.model.opt.timestep * self.render_frequency
+            
+            # Tiempo que realmente pasó desde el último render
+            real_time_passed = time.time() - self.last_render_time
+            
+            # Si la CPU fue muy rápida, dormimos la diferencia
+            if real_time_passed < sim_time_expected:
+                time.sleep(sim_time_expected - real_time_passed)
+            
+            self.last_render_time = time.time()
 
     def close(self):
         if self.viewer is not None:
-            try:
-                self.viewer.close()
-            except mujoco.viewer.ViewerError:
-                pass
+            self.viewer.close()
             self.viewer = None
         
