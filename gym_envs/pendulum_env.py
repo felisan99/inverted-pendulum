@@ -4,6 +4,7 @@ import mujoco
 from gymnasium import spaces
 import numpy as np
 import mujoco.viewer
+import mujoco_viewer
 import time
 
 class PendulumEnv(gym.Env):
@@ -137,10 +138,9 @@ class PendulumEnv(gym.Env):
         if self.render_mode != "human":
             return
         if self.viewer is None:
-            self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
+            self.viewer = mujoco_viewer.MujocoViewer(self.model, self.data)
         
-        self.viewer.sync()
-        #time.sleep(0.01)
+        self.viewer.render()
         time.sleep(self.model.opt.timestep)
 
     def close(self):
