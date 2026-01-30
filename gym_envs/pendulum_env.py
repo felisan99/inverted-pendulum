@@ -88,9 +88,32 @@ class PendulumEnv(gym.Env):
     def compute_reward(self, obs: np.ndarray, action: np.ndarray) -> float:
         motor_pos_sin, motor_pos_cos, motor_vel, pend_pos_sin, pend_pos_cos, pend_vel = obs
         
-        # Penalizacion por error de posicion del pendulo, bueno cercano a cero
-        pos_penalty = 1 - pend_pos_cos
-        reward = - pos_penalty
+        # 1. Error de angulo del pendulo (0 cuando esta vertical hacia arriba)
+        # 1 - cos(theta) va de 0 a 2
+        theta_error = (1 - pend_pos_cos) 
+        
+        # 2. Penalizacion por velocidad del pendulo (estabilizacion)
+        pend_vel_penalty = pend_vel ** 2
+
+        # 3. Penalizacion por velocidad del motor (evitar giro infinito del brazo)
+        motor_vel_penalty = motor_vel ** 2
+
+        # 4. Penalizacion por esfuerzo de control (voltaje)
+        # action es un array, tomamos el valor escalar o la norma
+        effort_penalty = np.sum(action ** 2)
+
+        # Pesos de la recompensa
+        w_theta = 5.0
+        w_pend_vel = 0.1
+        w_motor_vel = 0.001
+        w_effort = 0.001
+
+        # Recompensa negativa (costo)
+        reward = -(w_theta * theta_error + 
+                   w_pend_vel * pend_vel_penalty + 
+                   w_motor_vel * motor_vel_penalty + 
+                   w_effort * effort_penalty)
+                   
         return reward
 
     def step(self, action: np.ndarray):
