@@ -6,10 +6,13 @@ import numpy as np
 import mujoco.viewer
 import time
 
-# Paso tipico en motores Nema
-STEP_ANGLE = np.deg2rad(1.8)
-
 class PendulumEnv(gym.Env):
+    # DC Motor Parameters (12V, 1A nominal)
+    MAX_VOLTAGE = 12.0
+    R = 2.0        # Ohms
+    K_T = 0.023    # Nm/A
+    K_E = 0.023    # V/(rad/s)
+
     def __init__(self, model_path: str | None = None, render_mode: str = "human", max_steps: int = 2000):
         super().__init__()
         
@@ -27,14 +30,8 @@ class PendulumEnv(gym.Env):
         self.model = mujoco.MjModel.from_xml_path(str(model_path))
         self.data = mujoco.MjData(self.model)
 
-        # Define espacio de acciones y observaciones
-        """
-            Espacion de acciones mas parecido a un Nema
-            0 -> No mover
-            1 -> CW
-            2 -> CCW
-        """
-        self.action_space = spaces.Discrete(3)
+        # Define espacio de acciones (Voltaje continuo)
+        self.action_space = spaces.Box(low=-self.MAX_VOLTAGE, high=self.MAX_VOLTAGE, shape=(1,), dtype=np.float32)
         
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
 
@@ -97,17 +94,11 @@ class PendulumEnv(gym.Env):
         return reward
 
     def step(self, action: np.ndarray):
-        # Asegura que la accion es valida
-        match action:
-            case 0:
-                # No mover
-                self.data.ctrl[0] = 0.0
-            case 1:
-                # Mover en sentido horario
-                self.data.ctrl[0] = STEP_ANGLE + self.data.qpos[0]
-            case 2:
-                # Mover en sentido antihorario
-                self.data.ctrl[0] = -STEP_ANGLE + self.data.qpos[0]
+        # Aplica voltaje al motor DC simulado
+        voltage = np.clip(action, -self.MAX_VOLTAGE, self.MAX_VOLTAGE).item()
+        avg_omega = self.data.qvel[0]
+        torque = (self.K_T / self.R) * (voltage - self.K_E * avg_omega)
+        self.data.ctrl[0] = torque
         
         mujoco.mj_step(self.model, self.data)
         obs = self.get_observation()
