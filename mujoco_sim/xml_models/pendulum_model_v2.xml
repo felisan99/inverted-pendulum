@@ -4,7 +4,8 @@
 
     <worldbody>
         <body name="base" pos="0 0 0">
-            <geom type="sphere" size="0.05" rgba="0.2 0.3 0.3 1"/>
+            <!-- conaffinity="0" y contype="0" desactivan colisiones para la base -->
+            <geom type="sphere" size="0.05" rgba="0.2 0.3 0.3 1" contype="0" conaffinity="0"/>
             
             <body name="link1" pos="0 0 0">
                 <joint name="joint1" type="hinge" axis="0 0 1"/>
