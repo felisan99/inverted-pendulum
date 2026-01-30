@@ -9,7 +9,7 @@ def run_random_agent(env: pendulum_env.PendulumEnv):
         obs, info = env.reset()
         for step in range(500):
             action = env.action_space.sample()
-            obs, reward, done, truncated, info = env.step(0)
+            obs, reward, done, truncated, info = env.step(action)
             env.render()
             time.sleep(0.01)
         
