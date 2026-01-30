@@ -1,3 +1,10 @@
+"""
+Script de prueba para validar la dinámica del motor DC.
+Aplica voltaje máximo (12V) constante para verificar física y colisiones.
+
+Uso:
+    python test/max_voltage_test.py [--model RUTA_AL_XML]
+"""
 import numpy as np
 import time
 import sys
@@ -10,12 +17,16 @@ import gymnasium as gym
 import mujoco
 from gym_envs.pendulum_env import PendulumEnv
 
-def run_max_voltage_test():
-    print("Iniciando prueba de Máximo Voltaje (12V)...")
+import argparse
+
+def run_max_voltage_test(model_path=None):
+
+    print("Iniciando prueba de Máximo Voltaje (12V)")
+    if model_path:
+        print(f"Usando el modelo XML: {model_path}")
     
     # Crear entorno con renderizado "human" para ver la ventana nativa
-    # Importante: Ejecutar esto desde la terminal con python directamente, no desde notebooks
-    env = PendulumEnv(render_mode="human", max_steps=5000)
+    env = PendulumEnv(model_path=model_path, render_mode="human", max_steps=1000)
     
     obs, info = env.reset()
     
@@ -44,13 +55,17 @@ def run_max_voltage_test():
             
             # Debug de posibles colisiones
             if env.data.ncon > 0:
-                print(f"ADVERTENCIA: Detectados {env.data.ncon} contactos (colisiones). Esto puede estar frenando el motor.")
+                print(f"Detectados {env.data.ncon} colisiones entre objetos del modelo XML.")
 
     except KeyboardInterrupt:
-        print("\nPrueba detenida por el usuario.")
+        print("\nPrueba detenida.")
     
     finally:
         env.close()
 
 if __name__ == "__main__":
-    run_max_voltage_test()
+    parser = argparse.ArgumentParser(description="Prueba de máximo voltaje para el péndulo")
+    parser.add_argument("--model", type=str, default=None, help="Ruta al archivo XML del modelo")
+    args = parser.parse_args()
+    
+    run_max_voltage_test(model_path=args.model)
