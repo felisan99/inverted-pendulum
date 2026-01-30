@@ -19,7 +19,7 @@
     </worldbody>
 
     <actuator>
-        <position joint="joint1"/>        
+        <motor name="dc_motor" joint="joint1" gear="1"/>
     </actuator>
     <sensor>
         <jointpos joint="encoder_joint"/>
