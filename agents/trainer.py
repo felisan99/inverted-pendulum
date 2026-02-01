@@ -8,7 +8,7 @@ from gym_envs.pendulum_env import PendulumEnv
 from utils.plotting import plot_monitor_data
 
 class RLTrainer:
-    def __init__(self, agent_type="PPO", xml_file=None, policy="MlpPolicy", agent_kwargs=None, seed=None, render_mode="human", max_steps=None):
+    def __init__(self, agent_type="PPO", xml_file=None, policy="MlpPolicy", agent_kwargs=None, seed=None, render_mode="human", max_steps=None, create_run_dir=True):
         self.agent_type = agent_type.upper()
         self.xml_file = xml_file
         self.policy = policy
@@ -16,9 +16,10 @@ class RLTrainer:
         self.seed = seed
         self.render_mode = render_mode
         self.max_steps = max_steps
+        self.create_run_dir = create_run_dir
 
         self.base_dir = "results"
-        self.run_dir = self._create_run_dir()
+        self.run_dir = self._create_run_dir() if create_run_dir else None
         
         self.agents = {
             "PPO": PPO,
@@ -79,13 +80,17 @@ class RLTrainer:
 
         return env
     
-    def train(self, total_timesteps=20000, eval_freq=5000, n_eval_episodes=5):
+    def train(self, total_timesteps=20000, eval_freq=5000, n_eval_episodes=5, resume_from=None):
         print(f"Directorio de resultados: {self.run_dir}")
         
         train_env = self._make_env(monitor_path=os.path.join(self.run_dir, "train_monitor.csv"))
         val_env = self._make_env(monitor_path=os.path.join(self.run_dir, "val_monitor.csv"))
 
-        model = self._get_model(train_env)
+        if resume_from is not None:
+            model = self.agents[self.agent_type].load(resume_from, env=train_env)
+            print(f"Resumiendo entrenamiento desde {resume_from}")
+        else:
+            model = self._get_model(train_env)
         
         eval_callback = EvalCallback(
             val_env,
