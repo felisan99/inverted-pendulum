@@ -67,24 +67,19 @@ class PendulumEnv(gym.Env):
             vel_pendulum], 
             dtype=np.float32)
     
-    def reset(self, *, seed = None, options = None):
-        # Por convencion
+    def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         self.current_step = 0
-        
-        self.data.qpos[:] = 0.0
-        self.data.qvel[:] = 0.0
 
-        # Randomiza la posicion inicial del pendulo
+        mujoco.mj_resetData(self.xml_file, self.data)
+
         random_angle = self.np_random.uniform(low=-0.1, high=0.1)
         self.data.qpos[0] = 0.0
         self.data.qpos[1] = random_angle
 
-        # Avanzar un paso para que los cambios tengan efecto
-        mujoco.mj_step(self.xml_file, self.data)
-        
-        obs = self.get_observation()
-        return obs, {}
+        mujoco.mj_forward(self.xml_file, self.data)
+
+        return self.get_observation(), {}
     
     def compute_reward(self, obs: np.ndarray, action: np.ndarray) -> float:
         motor_pos_sin, motor_pos_cos, motor_vel, pend_pos_sin, pend_pos_cos, pend_vel = obs
@@ -128,7 +123,9 @@ class PendulumEnv(gym.Env):
         obs = self.get_observation()
         reward = self.compute_reward(obs, action)
         self.current_step += 1
-        self.render()
+
+        if self.render_mode == "human":
+            self.render()
 
         done = self.current_step >= self.max_steps
         
@@ -137,14 +134,13 @@ class PendulumEnv(gym.Env):
             "torque": torque,
             "voltage": voltage,
             "rpm_motor": (avg_omega * 60) / (2 * np.pi)
-        }
-
-        return obs, reward, done, False, info
+       }
+        terminated = False
+        truncated = self.current_step >= self.max_steps
+        
+        return obs, reward, terminated, truncated, info
     
     def render(self):
-        if self.render_mode != "human":
-            return
-        
         # Inicializar viewer si no existe
         if self.viewer is None:
             self.viewer = mujoco_viewer.MujocoViewer(self.xml_file, self.data)
