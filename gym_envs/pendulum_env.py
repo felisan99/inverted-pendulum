@@ -121,6 +121,7 @@ class PendulumEnv(gym.Env):
         
         mujoco.mj_step(self.xml_file, self.data)
         obs = self.get_observation()
+        motor_pos_sin, motor_pos_cos, motor_vel, pend_pos_sin, pend_pos_cos, pend_vel = obs
         reward = self.compute_reward(obs, action)
         self.current_step += 1
 
@@ -133,9 +134,11 @@ class PendulumEnv(gym.Env):
         info = {
             "torque": torque,
             "voltage": voltage,
-            "rpm_motor": (avg_omega * 60) / (2 * np.pi)
+            "rpm_motor": (avg_omega * 60) / (2 * np.pi),
+            "terminated reason": ("fallen" if pend_pos_cos < 0.0 else "pendulum velocity" if abs(pend_vel) > 15.0 else "motor velocity" if abs(motor_vel) > 50.0 else "none")
        }
-        terminated = False
+        
+        terminated = (pend_pos_cos < 0.0 or abs(pend_vel) > 15.0 or abs(motor_vel) > 50.0)
         truncated = self.current_step >= self.max_steps
         
         return obs, reward, terminated, truncated, info
