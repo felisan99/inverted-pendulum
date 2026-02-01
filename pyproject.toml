@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "gymnasium>=1.2.3",
     "mediapy>=1.2.5",
     "mujoco>=3.4.0",
     "mujoco-python-viewer>=0.1.4",
