@@ -13,22 +13,22 @@ class PendulumEnv(gym.Env):
     K_T = 0.023    # Nm/A
     K_E = 0.023    # V/(rad/s)
 
-    def __init__(self, model_path: str | None = None, render_mode: str = "human", max_steps: int = 2000):
+    def __init__(self, xml_file: str | None = None, render_mode: str = "human", max_steps: int = 2000):
         super().__init__()
         
         # Si no pasa la ruta al modelo se usa la ruta por defecto
-        if model_path is None:
+        if xml_file is None:
             ROOT_DIR = Path(__file__).resolve().parent.parent
-            model_path = ROOT_DIR / "mujoco_sim" / "xml_models" / "pendulum_model_v2.xml"
+            xml_file = ROOT_DIR / "mujoco_sim" / "xml_models" / "pendulum_model_v2.xml"
         
         # Verifica que el archivo del modelo existe
-        model_path = Path(model_path).resolve()
-        if not model_path.exists():
-            raise FileNotFoundError(f"Model file not found: {model_path}")
+        xml_file = Path(xml_file).resolve()
+        if not xml_file.exists():
+            raise FileNotFoundError(f"Model file not found: {xml_file}")
         
         # Carga el modelo y los datos
-        self.model = mujoco.MjModel.from_xml_path(str(model_path))
-        self.data = mujoco.MjData(self.model)
+        self.xml_file = mujoco.MjModel.from_xml_path(str(xml_file))
+        self.data = mujoco.MjData(self.xml_file)
 
         # Define espacio de acciones (Voltaje continuo)
         self.action_space = spaces.Box(low=-self.MAX_VOLTAGE, high=self.MAX_VOLTAGE, shape=(1,), dtype=np.float32)
@@ -81,7 +81,7 @@ class PendulumEnv(gym.Env):
         self.data.qpos[1] = random_angle
 
         # Avanzar un paso para que los cambios tengan efecto
-        mujoco.mj_step(self.model, self.data)
+        mujoco.mj_step(self.xml_file, self.data)
         
         obs = self.get_observation()
         return obs, {}
@@ -124,7 +124,7 @@ class PendulumEnv(gym.Env):
         torque = (self.K_T / self.R) * (voltage - self.K_E * avg_omega)
         self.data.ctrl[0] = torque
         
-        mujoco.mj_step(self.model, self.data)
+        mujoco.mj_step(self.xml_file, self.data)
         obs = self.get_observation()
         reward = self.compute_reward(obs, action)
         self.current_step += 1
@@ -147,7 +147,7 @@ class PendulumEnv(gym.Env):
         
         # Inicializar viewer si no existe
         if self.viewer is None:
-            self.viewer = mujoco_viewer.MujocoViewer(self.model, self.data)
+            self.viewer = mujoco_viewer.MujocoViewer(self.xml_file, self.data)
             self.last_render_time = time.time()
         
         # Solo actualizar la interfaz gráfica cada N pasos para evitar "slow motion"
@@ -156,7 +156,7 @@ class PendulumEnv(gym.Env):
             
             # Sincronización para Tiempo Real (Evitar cámara rápida)
             # Tiempo que debió pasar en simulación durante estos N pasos
-            sim_time_expected = self.model.opt.timestep * self.render_frequency
+            sim_time_expected = self.xml_file.opt.timestep * self.render_frequency
             
             # Tiempo que realmente pasó desde el último render
             real_time_passed = time.time() - self.last_render_time
