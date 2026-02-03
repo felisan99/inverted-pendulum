@@ -8,7 +8,7 @@ from gym_envs.pendulum_env import PendulumEnv
 from utils.plotting import plot_monitor_data
 
 class RLTrainer:
-    def __init__(self, agent_type="PPO", xml_file=None, policy="MlpPolicy", agent_kwargs=None, seed=None, render_mode="human", max_steps=None, create_run_dir=True):
+    def __init__(self, agent_type="PPO", xml_file=None, policy="MlpPolicy", agent_kwargs=None, seed=None, render_mode="human", max_steps=None, create_run_dir=True, task="equilibrium"):
         self.agent_type = agent_type.upper()
         self.xml_file = xml_file
         self.policy = policy
@@ -17,6 +17,7 @@ class RLTrainer:
         self.render_mode = render_mode
         self.max_steps = max_steps
         self.create_run_dir = create_run_dir
+        self.task = task
 
         self.base_dir = "results"
         self.run_dir = self._create_run_dir() if create_run_dir else None
@@ -70,7 +71,7 @@ class RLTrainer:
         """
         Crea una instancia del entorno con los wrappers necesarios.
         """
-        env = PendulumEnv(xml_file=self.xml_file, render_mode=self.render_mode if not for_prediction else "human", max_steps=self.max_steps)
+        env = PendulumEnv(xml_file=self.xml_file, render_mode=self.render_mode if not for_prediction else "human", max_steps=self.max_steps, task=self.task)
 
         if self.seed is not None:
             env.reset(seed=self.seed)
