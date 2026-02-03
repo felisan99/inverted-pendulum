@@ -5,6 +5,7 @@ from gymnasium import spaces
 import numpy as np
 import mujoco_viewer
 import time
+from math import exp
 
 class PendulumEnv(gym.Env):
     # DC Motor Parameters (12V, 1A nominal)
@@ -13,8 +14,18 @@ class PendulumEnv(gym.Env):
     K_T = 0.023    # Nm/A
     K_E = 0.023    # V/(rad/s)
 
-    def __init__(self, xml_file: str | None = None, render_mode: str = "human", max_steps: int = 2000):
+    def __init__(self, xml_file: str | None = None, render_mode: str = "human", max_steps: int = 2000, task="equilibrium"):
         super().__init__()
+
+        self.task = task
+
+        self._reward_functions = {
+            "equilibrium": self._reward_equilibrium,
+            "swing_up": self._reward_swing_up
+        }
+
+        if self.task not in self._reward_functions:
+            raise ValueError(f"Unknown task: {self.task}. Available tasks: {list(self._reward_functions.keys())}")
         
         # Si no pasa la ruta al modelo se usa la ruta por defecto
         if xml_file is None:
@@ -82,6 +93,11 @@ class PendulumEnv(gym.Env):
         return self.get_observation(), {}
     
     def compute_reward(self, obs: np.ndarray, action: np.ndarray) -> float:
+        reward_function = self._reward_functions[self.task]
+        computed_reward_for_task = reward_function(obs, action)
+        return computed_reward_for_task
+    
+    def _reward_equilibrium(self, obs: np.ndarray, action: np.ndarray) -> float:
         motor_pos_sin, motor_pos_cos, motor_vel, pend_pos_sin, pend_pos_cos, pend_vel = obs
         
         # 1. Error de angulo del pendulo (0 cuando esta vertical hacia arriba)
@@ -110,6 +126,43 @@ class PendulumEnv(gym.Env):
                    w_motor_vel * motor_vel_penalty + 
                    w_effort * effort_penalty)
                    
+        return reward
+    
+    def _reward_swing_up(self, obs: np.ndarray, action: np.ndarray) -> float:
+        # pend_pos_cos: 1.0 (arriba), -1.0 (abajo)
+        motor_sin, motor_cos, motor_vel, pend_sin, pend_pos_cos, pend_vel = obs
+        
+        # 1. Recompensa por Altura (Exponencial)
+        # Usamos una función exponencial para que la recompensa sea muy alta 
+        # SOLO cuando está cerca de la vertical.
+        target_reward = exp(-(1 - pend_pos_cos)**2 / 0.25)
+        
+        # 2. Recompensa por Ángulo (Lineal/Cuadrática para el swing-up)
+        upward_reward = (pend_pos_cos + 1) / 2
+        
+        # 3. Penalización de Velocidad del Péndulo
+        # Solo penalizamos fuerte la velocidad si ya está en la zona de arriba (> 0.7)
+        if pend_pos_cos > 0.7:
+            vel_penalty = 0.1 * (pend_vel ** 2)
+        else:
+            # Abajo permitimos velocidad, pero no infinita (evitar inestabilidad numérica)
+            vel_penalty = 0.001 * (pend_vel ** 2)
+
+        # 4. Penalización de posición del brazo (Mantenerlo centrado)
+        # Asumiendo que theta_motor = 0 es el centro.
+        # Como usamos sin/cos, podemos penalizar que el sin(motor) sea distinto de 0
+        motor_pos_penalty = 0.1 * (motor_sin ** 2)
+
+        # 5. Esfuerzo de Control (Voltaje)
+        effort_penalty = 0.01 * np.sum(action ** 2)
+
+        # Suma total, los pesos se deberan ajustar
+        reward = (10.0 * target_reward + 
+                2.0 * upward_reward - 
+                vel_penalty - 
+                motor_pos_penalty - 
+                effort_penalty)
+                
         return reward
 
     def step(self, action: np.ndarray):
