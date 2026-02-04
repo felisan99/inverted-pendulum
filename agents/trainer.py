@@ -32,6 +32,8 @@ class RLTrainer:
         """
         Devuelve el dispositivo a usar (CPU o GPU).
         """
+        if self.policy == "MlpPolicy":
+            return "cpu"
         if torch.backends.mps.is_available():
             return "mps"  # for macbook
         elif torch.cuda.is_available():

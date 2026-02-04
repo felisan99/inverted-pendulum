@@ -64,6 +64,14 @@ def parse_args():
         help="Modo de render (solo human en predict)"
     )
 
+    parser.add_argument(
+        "--task",
+        type=str,
+        default="equilibrium",
+        choices=["equilibrium", "swing_up"],
+        help="Tarea del péndulo"
+    )
+
     return parser.parse_args()
 
 
@@ -76,7 +84,8 @@ def main():
         render_mode=args.render_mode,
         max_steps=args.max_steps,
         seed=args.seed,
-        create_run_dir=False
+        create_run_dir=False,
+        task=args.task,
     )
 
     trainer.predict(

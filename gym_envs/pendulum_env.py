@@ -14,10 +14,11 @@ class PendulumEnv(gym.Env):
     K_T = 0.023    # Nm/A
     K_E = 0.023    # V/(rad/s)
 
-    def __init__(self, xml_file: str | None = None, render_mode: str = "human", max_steps: int = 2000, task="equilibrium"):
+    def __init__(self, xml_file: str | None = None, render_mode: str = "human", max_steps: int = 2000, task="equilibrium", starting_offset: float = 0.1):
         super().__init__()
 
         self.task = task
+        self.starting_offset = starting_offset
 
         self._reward_functions = {
             "equilibrium": self._reward_equilibrium,
@@ -84,9 +85,13 @@ class PendulumEnv(gym.Env):
 
         mujoco.mj_resetData(self.xml_file, self.data)
 
-        random_angle = self.np_random.uniform(low=-0.1, high=0.1)
+        if self.task == "swing_up":
+            self.data.qpos[1] = np.pi 
+        elif self.task == "equilibrium":
+            random_angle = self.np_random.uniform(low=-self.starting_offset, high=self.starting_offset)
+            self.data.qpos[1] = random_angle
+
         self.data.qpos[0] = 0.0
-        self.data.qpos[1] = random_angle
 
         mujoco.mj_forward(self.xml_file, self.data)
 
@@ -182,17 +187,21 @@ class PendulumEnv(gym.Env):
             self.render()
 
         done = self.current_step >= self.max_steps
-        
+        truncated = self.current_step >= self.max_steps
+        if self.task == "equilibrium":
+            terminated = (pend_pos_cos < 0.0 or abs(pend_vel) > 15.0 or abs(motor_vel) > 50.0)
+        elif self.task == "swing_up":
+            terminated = False
+            # terminated = abs(motor_vel) > 15 or abs(pend_vel) > 15.0
+
         # Info extra para debugging
         info = {
             "torque": torque,
             "voltage": voltage,
             "rpm_motor": (avg_omega * 60) / (2 * np.pi),
-            "terminated reason": ("fallen" if pend_pos_cos < 0.0 else "pendulum velocity" if abs(pend_vel) > 15.0 else "motor velocity" if abs(motor_vel) > 50.0 else "none")
-       }
+            "terminated": str(terminated)
+        }
         
-        terminated = (pend_pos_cos < 0.0 or abs(pend_vel) > 15.0 or abs(motor_vel) > 50.0)
-        truncated = self.current_step >= self.max_steps
         
         return obs, reward, terminated, truncated, info
     
