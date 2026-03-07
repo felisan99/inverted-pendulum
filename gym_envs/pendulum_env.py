@@ -14,7 +14,7 @@ class PendulumEnv(gym.Env):
     K_T = 0.023    # Nm/A
     K_E = 0.023    # V/(rad/s)
 
-    def __init__(self, xml_file: str | None = None, render_mode: str = "human", max_steps: int = 2000, task="equilibrium", starting_offset: float = 0.1):
+    def __init__(self, xml_file: str | None = None, render_mode: str = "human", max_steps: int = 2000, task="equilibrium", starting_offset: float = 0.4):
         super().__init__()
 
         self.task = task
