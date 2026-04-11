@@ -6,9 +6,10 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import EvalCallback
 from gym_envs.pendulum_env import PendulumEnv
 from utils.plotting import plot_monitor_data
+import torch
 
 class RLTrainer:
-    def __init__(self, agent_type="PPO", xml_file=None, policy="MlpPolicy", agent_kwargs=None, seed=None, render_mode="human", max_steps=None, create_run_dir=True):
+    def __init__(self, agent_type="PPO", xml_file=None, policy="MlpPolicy", agent_kwargs=None, seed=None, render_mode="human", max_steps=None, create_run_dir=True, task="equilibrium"):
         self.agent_type = agent_type.upper()
         self.xml_file = xml_file
         self.policy = policy
@@ -17,6 +18,7 @@ class RLTrainer:
         self.render_mode = render_mode
         self.max_steps = max_steps
         self.create_run_dir = create_run_dir
+        self.task = task
 
         self.base_dir = "results"
         self.run_dir = self._create_run_dir() if create_run_dir else None
@@ -26,6 +28,18 @@ class RLTrainer:
             "SAC": SAC,
             "A2C": A2C
         }
+    def _get_device(self):
+        """
+        Devuelve el dispositivo a usar (CPU o GPU).
+        """
+        if self.policy == "MlpPolicy":
+            return "cpu"
+        if torch.backends.mps.is_available():
+            return "mps"  # for macbook
+        elif torch.cuda.is_available():
+            return "cuda" # for colab
+        return "cpu"
+
 
     def _create_run_dir(self):
         """
@@ -57,12 +71,14 @@ class RLTrainer:
             raise ValueError(f"Agente {self.agent_type} no soportado.")
 
         agent_cls = self.agents[self.agent_type]
+        device = self._get_device()
 
         return agent_cls(
             self.policy,
             env,
             verbose=verbose,
             tensorboard_log=self.run_dir,
+            device=device,
             **self.agent_kwargs,
         )
     
@@ -70,7 +86,7 @@ class RLTrainer:
         """
         Crea una instancia del entorno con los wrappers necesarios.
         """
-        env = PendulumEnv(xml_file=self.xml_file, render_mode=self.render_mode if not for_prediction else "human", max_steps=self.max_steps)
+        env = PendulumEnv(xml_file=self.xml_file, render_mode=self.render_mode if not for_prediction else "human", max_steps=self.max_steps, task=self.task)
 
         if self.seed is not None:
             env.reset(seed=self.seed)
