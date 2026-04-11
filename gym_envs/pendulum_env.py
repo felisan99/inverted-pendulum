@@ -42,7 +42,8 @@ class PendulumEnv(gym.Env):
         self.xml_file = mujoco.MjModel.from_xml_path(str(xml_file))
         self.data = mujoco.MjData(self.xml_file)
 
-        # Define espacio de acciones (Voltaje continuo)
+        # Define espacio de acciones (Voltaje continuo).
+        # Contrato estandar de GYM: action space sea un array, aunque solo tengamos una accion.
         self.action_space = spaces.Box(low=-self.MAX_VOLTAGE, high=self.MAX_VOLTAGE, shape=(1,), dtype=np.float32)
         
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
@@ -54,7 +55,7 @@ class PendulumEnv(gym.Env):
         self.current_step = 0
         self.render_frequency = 10
 
-    # HAY QUE VER ACA QUE ES LO QUE QUIERO DEVOLVER COMO OBSERVACION
+    # TODO: HAY QUE VER ACA QUE ES LO QUE QUIERO DEVOLVER COMO OBSERVACION
     def get_observation(self):
         """
         Devuelve el estado actual [theta1, vel1, theta2, vel2]
@@ -116,7 +117,7 @@ class PendulumEnv(gym.Env):
         motor_vel_penalty = motor_vel ** 2
 
         # 4. Penalizacion por esfuerzo de control (voltaje)
-        # action es un array, tomamos el valor escalar o la norma
+        # action es un array, tomamos el valor escalar o la norma. Se usa np.sum que es compatible con arrays de cualquier tamaño, aunque en este caso solo tenemos 1 accion.
         effort_penalty = np.sum(action ** 2)
 
         # Pesos de la recompensa
