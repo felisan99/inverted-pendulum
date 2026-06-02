@@ -10,4 +10,14 @@ dependencies = [
     "mediapy>=1.2.5",
     "mujoco>=3.4.0",
     "mujoco-python-viewer>=0.1.4",
+    "pyqtgraph>=0.13",
+    "pyside6>=6.7",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]

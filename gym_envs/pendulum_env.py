@@ -1,18 +1,20 @@
+import math
 import gymnasium as gym
 from pathlib import Path
 import mujoco
 from gymnasium import spaces
 import numpy as np
-import mujoco_viewer
 import time
 from math import exp
 
+# Sensor resolutions (context/hardware.md, context/firmware.md)
+# AS5600 — absolute magnetic encoder, 12-bit (4096 counts/rev)
+_PENDULUM_LSB = 2 * math.pi / 4096   # 1.534e-3 rad per count
+# Hall encoder — x2 quadrature decoding, 1716 steps/rev at output shaft
+_MOTOR_LSB    = 2 * math.pi / 1716   # 3.662e-3 rad per step
+
 class PendulumEnv(gym.Env):
-    # DC Motor Parameters (12V, 1A nominal)
     MAX_VOLTAGE = 12.0
-    R = 2.0        # Ohms
-    K_T = 0.023    # Nm/A
-    K_E = 0.023    # V/(rad/s)
 
     def __init__(self, xml_file: str | None = None, render_mode: str = "human", max_steps: int = 2000, task="equilibrium", starting_offset: float = 0.4):
         super().__init__()
@@ -31,7 +33,7 @@ class PendulumEnv(gym.Env):
         # Si no pasa la ruta al modelo se usa la ruta por defecto
         if xml_file is None:
             ROOT_DIR = Path(__file__).resolve().parent.parent
-            xml_file = ROOT_DIR / "mujoco_sim" / "xml_models" / "pendulum_model_v2.xml"
+            xml_file = ROOT_DIR / "mujoco_sim" / "xml_models" / "pendulum_model_v3.xml"
         
         # Verifica que el archivo del modelo existe
         xml_file = Path(xml_file).resolve()
@@ -55,29 +57,44 @@ class PendulumEnv(gym.Env):
         self.current_step = 0
         self.render_frequency = 10
 
-    # TODO: HAY QUE VER ACA QUE ES LO QUE QUIERO DEVOLVER COMO OBSERVACION
-    def get_observation(self):
-        """
-        Devuelve el estado actual [theta1, vel1, theta2, vel2]
-        theta_motor: Angulo de la primera articulacion
-        vel_motor: Velocidad de la primera articulacion
-        theta_pendulum: Angulo de la segunda articulacion
-        vel_pendulum: Velocidad de la segunda articulacion
+        # Posiciones cuantizadas del paso anterior para estimacion de velocidad
+        self._prev_motor_pos_q    = 0.0
+        self._prev_pendulum_pos_q = 0.0
 
-        Se usa np.sin y np.cos para representar los angulos sin saltos de 0 a 360
+    @staticmethod
+    def _quantize(angle: float, lsb: float) -> float:
+        return round(angle / lsb) * lsb
+
+    def get_observation(self) -> np.ndarray:
         """
-        theta_motor = self.data.qpos[0]
-        vel_motor = self.data.qvel[0]
-        theta_pendulum = self.data.qpos[1]
-        vel_pendulum = self.data.qvel[1]
+        Observacion: [sin(motor), cos(motor), vel_motor,
+                      sin(pendulum), cos(pendulum), vel_pendulum]
+
+        Las posiciones se cuantizan segun la resolucion real de cada sensor:
+          motor    -> Hall encoder x2, 1716 pasos/vuelta (_MOTOR_LSB)
+          pendulum -> AS5600 12-bit, 4096 cuentas/vuelta (_PENDULUM_LSB)
+
+        Las velocidades se estiman por diferencia finita sobre posiciones
+        cuantizadas, replicando lo que hace el firmware del ESP32.
+        """
+        dt = self.xml_file.opt.timestep
+
+        motor_pos_q   = self._quantize(self.data.qpos[0], _MOTOR_LSB)
+        pendulum_pos_q = self._quantize(self.data.qpos[1], _PENDULUM_LSB)
+
+        motor_vel_q   = (motor_pos_q   - self._prev_motor_pos_q)   / dt
+        pendulum_vel_q = (pendulum_pos_q - self._prev_pendulum_pos_q) / dt
+
+        self._prev_motor_pos_q    = motor_pos_q
+        self._prev_pendulum_pos_q = pendulum_pos_q
 
         return np.array(
-            [np.sin(theta_motor), 
-            np.cos(theta_motor), 
-            vel_motor, 
-            np.sin(theta_pendulum), 
-            np.cos(theta_pendulum), 
-            vel_pendulum], 
+            [np.sin(motor_pos_q),
+             np.cos(motor_pos_q),
+             motor_vel_q,
+             np.sin(pendulum_pos_q),
+             np.cos(pendulum_pos_q),
+             pendulum_vel_q],
             dtype=np.float32)
     
     def reset(self, *, seed=None, options=None):
@@ -95,6 +112,11 @@ class PendulumEnv(gym.Env):
         self.data.qpos[0] = 0.0
 
         mujoco.mj_forward(self.xml_file, self.data)
+
+        # Inicializar posiciones cuantizadas para que la primera llamada a
+        # get_observation devuelva velocidad = 0 (sistema en reposo en reset)
+        self._prev_motor_pos_q    = self._quantize(self.data.qpos[0], _MOTOR_LSB)
+        self._prev_pendulum_pos_q = self._quantize(self.data.qpos[1], _PENDULUM_LSB)
 
         return self.get_observation(), {}
     
@@ -172,11 +194,8 @@ class PendulumEnv(gym.Env):
         return reward
 
     def step(self, action: np.ndarray):
-        # Aplica voltaje al motor DC simulado
         voltage = np.clip(action, -self.MAX_VOLTAGE, self.MAX_VOLTAGE).item()
-        avg_omega = self.data.qvel[0]
-        torque = (self.K_T / self.R) * (voltage - self.K_E * avg_omega)
-        self.data.ctrl[0] = torque
+        self.data.ctrl[0] = voltage
         
         mujoco.mj_step(self.xml_file, self.data)
         obs = self.get_observation()
@@ -195,20 +214,19 @@ class PendulumEnv(gym.Env):
             terminated = False
             # terminated = abs(motor_vel) > 15 or abs(pend_vel) > 15.0
 
-        # Info extra para debugging
         info = {
-            "torque": torque,
+            "torque": self.data.actuator_force[0],
             "voltage": voltage,
-            "rpm_motor": (avg_omega * 60) / (2 * np.pi),
-            "terminated": str(terminated)
+            "rpm_motor": (self.data.qvel[0] * 60) / (2 * np.pi),
+            "terminated": str(terminated),
         }
         
         
         return obs, reward, terminated, truncated, info
     
     def render(self):
-        # Inicializar viewer si no existe
         if self.viewer is None:
+            import mujoco_viewer
             self.viewer = mujoco_viewer.MujocoViewer(self.xml_file, self.data)
             self.last_render_time = time.time()
         

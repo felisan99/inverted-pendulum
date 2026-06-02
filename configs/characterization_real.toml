@@ -1,0 +1,106 @@
+# ============================================================
+# Configuracion del sistema real — Pendulo de Furuta
+# Todos los parametros provienen de mediciones o identificacion
+# experimental. No se usan valores de datasheet sin validacion.
+# Modelo: pendulum_model_v3.xml
+# ============================================================
+
+[simulation]
+xml_model      = "mujoco_sim/xml_models/pendulum_model_v3.xml"
+duration_sec   = 2.0
+timestep_sec   = 0.002   # 500 Hz — coincide con frecuencia de control del firmware
+
+[initial_conditions]
+motor_position_rad  = 0.0
+pendulum_position   = "down"   # "up" (equilibrio inestable) | "down" (equilibrio estable)
+# pendulum_position_rad = 3.14159265  # alternativa numerica exacta
+
+# ============================================================
+# [friction]
+# Fuentes:
+#   joint1_damping      — experimento-respuesta-del-motor/
+#                         b_arm = (K_eff/K) - K_be
+#                       = (0.002482/0.01065) - (1.092^2/5.16)
+#                       = 0.23305 - 0.23107 = 0.00198 N·m·s/rad
+#                         (K_be domina; b_arm es el residuo mecanico viscoso)
+#
+#   joint1_frictionloss — 0.0 [N·m]
+#                         La friccion ESTATICA medida en el sweep FWD (sustentacion 64 PWM)
+#                         es tau_static ≈ 0.159 N·m. Sin embargo, el balance de torque en
+#                         regimen estacionario del experimento sin pendulo da:
+#                           frictionloss_cinetica = gainprm*V - (K_be+b_arm)*omega_ss
+#                                                 = 2.5392 - 2.5403 = -0.001 N·m ≈ 0
+#                         -> La friccion CINETICA a omega ≈ 10.9 rad/s es despreciable.
+#                         El modelo MuJoCo frictionloss es constante (Coulomb puro) y no
+#                         puede representar ambos regimenes simultáneamente. Para el regimen
+#                         de operacion del RL, frictionloss=0 da error de 0.04% en omega_ss.
+#                         frictionloss=0.159 daba 8.7% de error.
+#
+#   encoder_damping     — experimento-respuesta-escalon/ STEP_1023_100
+#                         b2 = 2*zeta*sqrt(gamma*delta)
+#                       = 2*0.0114*sqrt(1.8252e-3 * 7.168e-2)
+#                       = 2.60e-4 N·m·s/rad
+#   encoder_frictionloss — sin medicion directa del pivote del pendulo.
+#                          Se mantiene en 0 hasta identificacion especifica.
+# ============================================================
+[friction]
+joint1_damping       = 0.00198   # b_arm [N·m·s/rad] — viscoso, identificado sin pendulo
+joint1_frictionloss  = 0.0       # [N·m] — friccion cinetica ≈ 0 en regimen (ver nota arriba)
+encoder_damping      = 2.60e-4   # b2 [N·m·s/rad] — decaimiento libre pendulo, STEP_1023_100
+encoder_frictionloss = 0.0       # [N·m] — sin medicion directa
+
+# ============================================================
+# [motor] — JGA25-370, reductora 78:1, alimentacion 12 V
+#
+# gainprm  = Kt,sal / Rm = 1.092 / 5.16 = 0.2116 N·m/V
+#   -> omega_ss teorico = Vmax/Ke,sal = 12/1.092 = 10.99 rad/s
+#   -> omega_ss medido sin pendulo  = 10.90 rad/s  (error 0.8%)
+#   -> omega_ss medido con pendulo  = 10.47 rad/s  (error 4.7%)
+# biasprm  = -(Kt,sal * Ke,sal) / Rm = -(1.092^2) / 5.16 = -0.2311 N·m/(rad/s)
+# armature = rotor_inertia * n^2 = 1.446e-6 * 78^2 = 8.797e-3 kg·m²
+#   (derivado de tau_rise experimento-respuesta-escalon/ sin pendulo)
+#
+# Fuentes electricas:
+#   resistance_ohm    — stall: 12V/2.18A y 5V/1.04A -> 5.16 Ω (rango 4.8–5.5)
+#   torque_constant   — Kt,sal = n * Kt_motor = 78 * 0.01400
+#   back_emf_constant — idem (Kt = Ke en SI para motor DC)
+#   stall_torque_nm   — Kt,sal * Vmax / Rm = 1.092 * 12 / 5.16 = 2.540 N·m
+# ============================================================
+[motor]
+max_voltage          = 12.0       # V
+gainprm              = 0.2116     # N·m/V — Kt,sal / Rm
+biasprm              = -0.2311    # N·m/(rad/s) — -Kt,sal*Ke,sal / Rm
+armature             = 8.797e-3   # kg·m² — inercia del rotor reflejada al eje de salida
+stall_torque_nm      = 2.540      # N·m — Kt,sal * Vmax / Rm
+resistance_ohm       = 5.16       # Ω — medido
+torque_constant      = 1.092      # N·m/A — eje de salida
+back_emf_constant    = 1.092      # V·s/rad — eje de salida
+
+# ============================================================
+# LIMITACION CONOCIDA — tau_dec (decaimiento al cortar PWM):
+#   El sistema real mide tau_dec = 33 ms porque el driver IBT-2
+#   cortocircuita los bornes del motor cuando RPWM=LPWM=0, lo que
+#   genera frenado por back-EMF con resistencia de cortocircuito.
+#   El modelo MuJoCo aplica ctrl=0 sin cortocircuito (coasting puro),
+#   por lo que el decaimiento simulado es mas lento (~48 ms).
+#   Para corregir esto habria que implementar zero_voltage_behavior="brake"
+#   en characterize_system.py con brake_resistance_ohm = Rm = 5.16 Ω.
+#   Por ahora se documenta como limitacion sin impacto en el control RL
+#   (el agente no aplica PWM=0 durante la estabilizacion activa).
+# ============================================================
+
+[input]
+type             = "step"
+amplitude_voltage = 12.0    # V — maximo disponible
+start_time_sec   = 0.0
+duration_sec     = 0.5      # s — escalon de 0.5 s para ver transitorio + regimen
+
+[output]
+csv_path   = "results/characterization/step_real_12v_0p5s.csv"
+plot_path  = "results/characterization/step_real_12v_0p5s.png"
+show_plot  = false
+save_video = true
+video_path = "results/characterization/step_real_12v_0p5s.mp4"
+video_fps  = 60
+video_width  = 1280
+video_height = 720

@@ -1,0 +1,165 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+This is a reinforcement learning project for controlling a physical inverted pendulum using a DC motor. The simulation runs in MuJoCo and agents are trained with Stable-Baselines3. The environment is designed to closely mirror real hardware (sensor quantization, motor dynamics) to enable sim-to-real transfer.
+
+## Environment Setup
+
+The project uses `uv` with a `.venv` directory. Activate it before running anything:
+
+```bash
+source .venv/bin/activate
+```
+
+Python version is pinned in `.python-version`. To install dev dependencies (pytest):
+
+```bash
+uv sync --group dev
+```
+
+## Common Commands
+
+**Run a random episode to validate the environment:**
+```bash
+python scripts/random_episode_test.py --xml mujoco_sim/xml_models/pendulum_model_v3.xml
+```
+
+**Run system characterization (fits model params against real bench data):**
+```bash
+python -m mujoco_sim.characterize_system --config configs/characterization_step.toml
+```
+
+**Run tests with pytest:**
+```bash
+pytest test/
+```
+
+**Run a trained model:**
+```bash
+python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mujoco_sim/xml_models/pendulum_model_v3.xml --agent PPO --task equilibrium
+```
+
+## Architecture
+
+### Key Modules
+
+- **`gym_envs/pendulum_env.py`** - The Gymnasium environment (`PendulumEnv`). This is the core of the project. It wraps a MuJoCo model and implements:
+  - Continuous action space: voltage in `[-12V, +12V]`
+  - Observation space (6-dim): `[sin(motor), cos(motor), vel_motor, sin(pendulum), cos(pendulum), vel_pendulum]`
+  - Sensor quantization in `get_observation()` mimicking the real AS5600 encoder (pendulum) and Hall encoder (motor)
+  - Two tasks: `"equilibrium"` (balance upright) and `"swing_up"` (from hanging position)
+  - DC motor dynamics: voltage passed directly as `data.ctrl[0] = voltage`; the `general` actuator in the XML computes torque via `gainprm=0.2116` and `biasprm=-0.2311` (validated against real hardware)
+  - Simulation timestep: 0.001 s (1 kHz), matching the ESP32 firmware rate
+
+- **`agents/trainer.py`** - `RLTrainer` class wrapping Stable-Baselines3. Supports PPO, SAC, A2C. Saves results to `results/run_N/` with TensorBoard logs, monitor CSVs, and model checkpoints.
+
+- **`agents/predict.py`** - CLI entrypoint for loading and running a saved model.
+
+- **`mujoco_sim/characterize_system.py`** - Standalone simulation tool for parameter identification. Reads a TOML config, patches the XML model in memory, runs a parameterized simulation, and outputs CSV/plots/video. Does not use the Gymnasium env.
+
+- **`mujoco_sim/analisis_step_100_comparacion.py`** - Compares a real hardware step-response CSV against the MuJoCo simulation. Extracts ωn and ζ via log-decrement from both signals and prints an error table. `--config` is optional: without it, physical parameters are taken from validated defaults and the step signal is extracted automatically from the CSV's PWM column. `--output <path>` saves the plot to a custom path; `--output` (no value) skips the plot entirely.
+
+- **`mujoco_sim/visualizar_step_100.py`** - Interactive 3D visualizer for the STEP_1023_100 experiment. Opens a MuJoCo viewer window and shows the comparison plot when done. Use `--speed` to control playback rate (default 3.0×). Requires a display; on macOS use `mujoco_viewer.MujocoViewer` — do not use `mujoco.viewer.launch_passive` without `mjpython`.
+
+- **`scripts/`** - Manual validation scripts (`random_episode_test.py`, `max_voltage_test.py`). Run interactively with `--xml mujoco_sim/xml_models/pendulum_model_v3.xml`; require a display (not headless).
+
+- **`mujoco_sim/xml_models/`** - MuJoCo XML model files. `pendulum_model_v3.xml` is the only model — validated against real hardware (sim-to-real error: ωn 0.09%, ζ 1.07%).
+
+- **`configs/`** - TOML configuration files for `characterize_system.py`. Each file defines physical parameters, initial conditions, input signal, and output paths.
+
+- **`scripts/gui_monitor.py`** - Real-time desktop GUI (PySide6 + PyQtGraph). Runs `PendulumSim` at 1 kHz in a `QThread` and shows live plots of both joints plus an offscreen 3D render (`mujoco.Renderer`). Control panel: set PWM/voltage (Apply), hold-to-move jog buttons, Reset. Run with `python scripts/gui_monitor.py`; requires a display.
+
+- **`utils/plotting.py`** - Plots learning curves from SB3 Monitor CSV files.
+
+### Observation Design
+
+Positions are encoded as `(sin, cos)` pairs rather than raw angles to avoid discontinuities at `±π`. Velocities are estimated by finite difference over quantized positions (matching firmware behavior on the ESP32), not taken directly from MuJoCo's `qvel`.
+
+### Results Structure
+
+Training runs save to `results/run_N/` where N is auto-incremented. Each run contains: `model_final.zip`, `best_model.zip`, `train_monitor.csv`, `val_monitor.csv`, TensorBoard event files, and learning curve PNGs.
+
+## Sim-to-Real Validation: STEP_1023_100
+
+The reference experiment applies a 100 ms voltage pulse (PWM 1023, ~5 V) to the motor and records the free oscillation of the pendulum. It is the ground truth for validating that MuJoCo parameters match real hardware.
+
+- Config: `configs/step_1023_100_sim.toml`
+- XML model: `mujoco_sim/xml_models/pendulum_model_v3.xml`
+- Real data: `/Users/felipe/Documents/Tesis/Informe-Final/notes/experimento-validacion-sim-real/`
+- Full documentation: `.../experimento-validacion-sim-real/README.md`
+
+**Critical parameter — do not change without re-validating:**
+
+```toml
+[friction]
+joint1_frictionloss = 0.02
+```
+
+This value is intentional. It proxies the mechanical resistance of the gearbox reduction that keeps the arm stationary during the pendulum's free oscillation. Without it, the arm drifts slightly and adds spurious damping, which overestimates ζ.
+
+**Run the interactive visualizer:**
+
+```bash
+python mujoco_sim/visualizar_step_100.py --speed 3.0
+```
+
+**Run the sim-vs-real comparison:**
+
+```bash
+python mujoco_sim/analisis_step_100_comparacion.py --real <ruta_al_CSV_real>
+```
+
+**Validated results (June 2025):**
+
+| Metric | Real | Sim | Error |
+|--------|------|-----|-------|
+| ωn (rad/s) | 6.261 | 6.255 | 0.09% |
+| ζ | 0.01140 | 0.01152 | 1.07% |
+| Amplitude ratio | 1.0 | ~0.94 | ~6% |
+
+The ~6% amplitude deficit is attributed to motor resistance uncertainty (measured at 5 V: 4.808 Ω; model value: 5.16 Ω). Not corrected because both values come from empirical measurements.
+
+## GUI Monitor architecture
+
+`scripts/gui_monitor.py` uses a threading model designed around the 1 kHz simulation loop.
+
+**Threading**
+- `SimWorker` (QObject moved to `QThread`): runs `PendulumSim.step()` in a tight loop, real-time throttled with `time.sleep`. Emits `data_ready` every 10 steps (100 Hz) and `frame_ready` (offscreen render) every 33 steps (~30 Hz).
+- Main thread: Qt event loop. A `QTimer` at 30 Hz reads a `RingBuffer` and calls `setData` on the PyQtGraph curves.
+
+**Why `DirectConnection` for control signals**
+The worker loop never returns to the Qt event loop, so queued slots are never delivered. `Qt.DirectConnection` makes the slot execute in the calling (main) thread, setting a plain int/bool flag the loop polls — GIL-safe in CPython.
+
+**Why `data_ready` fires at 100 Hz, not 1 kHz**
+The plot refreshes at 30 Hz. Emitting 1000 cross-thread queued signals per second is wasteful. 100 Hz provides ample resolution and reduces event queue pressure by 10x.
+
+**Why `RingBuffer` instead of `deque[tuple]`**
+`np.array(deque)` on every plot frame creates a full copy. `RingBuffer` writes directly into pre-allocated `np.ndarray`s; `arrays()` returns views (no allocation).
+
+**Why `np.searchsorted` instead of a boolean mask**
+`arr[bool_mask]` creates a copy. `arr[i:]` is a view. `searchsorted` finds the window start in O(log N).
+
+**Why `mujoco.Renderer` instead of `mujoco_viewer`**
+`mujoco_viewer` uses GLFW and requires the main thread, conflicting with Qt on macOS. `mujoco.Renderer` is purely offscreen and can be created in any thread.
+
+**Angle conventions**
+
+| Signal | Conversion | Display meaning |
+|--------|------------|-----------------|
+| Pendulum | `pend_enc * 360/4096 - 180` | 0° = upright, ±180° = hanging |
+| Arm | `motor_enc * 360/1716` | Cumulative degrees, unbounded |
+
+**Extending the GUI**
+- New command: add a flag to `SimWorker`, apply it in the loop, add a `@Slot` connected with `Qt.DirectConnection`.
+- New plot: add a column to `RingBuffer`, update `_on_data` and `_refresh_plots`.
+
+## CI
+
+GitHub Actions runs `pytest test/` on every PR and every push to `main` (`.github/workflows/tests.yml`). Tests use `render_mode=None` and do not require a display.
+
+## Empirical Test Results
+
+Real hardware test data and empirical measurements are stored outside this repository at `/Users/felipe/Documents/Tesis/Informe-Final`. Consult that directory when you need to compare simulation behavior against real bench results or when working on parameter identification.

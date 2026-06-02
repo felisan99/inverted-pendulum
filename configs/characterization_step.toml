@@ -1,0 +1,41 @@
+[simulation]
+xml_model = "mujoco_sim/xml_models/pendulum_model_v3.xml"
+duration_sec = 2.0
+timestep_sec = 0.002
+
+[initial_conditions]
+motor_position_rad = 0.0
+pendulum_position = "down"  # "up" or "down"
+# pendulum_position_rad = 0.0
+
+[friction]
+joint1_damping = 0.0005
+joint1_frictionloss = 0.0
+encoder_damping = 0.0005
+encoder_frictionloss = 0.0
+
+[motor]
+max_voltage       = 12.0
+gainprm           = 0.2116
+biasprm           = -0.2311
+armature          = 8.797e-3
+stall_torque_nm   = 2.540
+resistance_ohm    = 5.16
+torque_constant   = 1.092
+back_emf_constant = 1.092
+
+[input]
+type = "step"
+amplitude_voltage = 12.0
+start_time_sec = 0.0
+duration_sec = 0.5
+
+[output]
+csv_path = "results/characterization/step_12v_0p5s.csv"
+plot_path = "results/characterization/step_12v_0p5s.png"
+show_plot = false
+save_video = true
+video_path = "results/characterization/step_12v_0p5s.mp4"
+video_fps = 60
+video_width = 1280
+video_height = 720
