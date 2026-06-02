@@ -234,10 +234,20 @@ Output paths are defined in the `[output]` section of the TOML.
 
 ---
 
+## Documentation
+
+| Document | Description |
+|---|---|
+| [Writing a custom controller](docs/custom-controller-tutorial.md) | How to write and load your own controller script in the GUI monitor |
+
+---
+
 ## Repository structure
 
 ```
 configs/          TOML configuration files for characterize_system.py
+controllers/      Example controller scripts (pid_example.py, threshold_example.py)
+docs/             Guides and tutorials
 gym_envs/         Gymnasium environment (PendulumEnv)
 agents/           RL training (RLTrainer) and inference (predict.py)
 mujoco_sim/       Simulation scripts and XML model

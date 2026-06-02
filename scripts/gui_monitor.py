@@ -5,6 +5,7 @@ Runs PendulumSim in a background thread and displays:
   - Live plots of pendulum angle and arm position
   - Offscreen-rendered 3D view of the MuJoCo model
   - Control panel: PWM/voltage apply, hold-to-jog buttons, reset
+  - External controller plugin: load any Python script with a Controller class
 
 Usage:
     python scripts/gui_monitor.py
@@ -12,6 +13,8 @@ Usage:
 
 from __future__ import annotations
 
+import importlib.util
+import math
 import sys
 import time
 from pathlib import Path
@@ -27,8 +30,9 @@ from gym_envs.pendulum_sim import PendulumSim, PWM_MAX
 from PySide6.QtCore import QObject, QThread, Signal, Slot, QTimer, Qt
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter,
-    QVBoxLayout, QGridLayout,
+    QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QSpinBox, QDoubleSpinBox, QGroupBox,
+    QScrollArea, QLineEdit, QFileDialog,
 )
 from PySide6.QtGui import QFontDatabase, QImage, QPixmap
 import pyqtgraph as pg
@@ -41,8 +45,8 @@ _DATA_EMIT_EVERY    = 10   # emit data_ready every N steps → 100 Hz
 HISTORY_S    = 5.0
 MAXLEN       = int(HISTORY_S * 1000 / _DATA_EMIT_EVERY)  # 500
 PLOT_HZ      = 30
-RENDER_W     = 320
-RENDER_H     = 240
+RENDER_W     = 640
+RENDER_H     = 480
 RENDER_EVERY = 33
 
 
@@ -67,7 +71,6 @@ class RingBuffer:
             self._size += 1
 
     def arrays(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Return (t, pend, arm) in chronological order (views when possible)."""
         n = self._size
         if n == 0:
             empty = np.empty(0)
@@ -88,13 +91,23 @@ class SimWorker(QObject):
 
     data_ready  = Signal(int, int, int)   # t_us, motor_enc, pend_enc
     frame_ready = Signal(object)          # numpy uint8 H×W×3 RGB
+    ctrl_error  = Signal(str)             # controller compute() raised
 
     def __init__(self) -> None:
         super().__init__()
         self._sim        = PendulumSim()
         self._pwm: int   = 0
         self._running    = False
+
+        # manual reset flag
         self._reset_flag = False
+
+        # controller flags (set from main thread via DirectConnection, GIL-safe)
+        self._ctrl_active            = False
+        self._ctrl_start_flag        = False
+        self._ctrl_stop_flag         = False
+        self._controller             = None   # Controller instance
+        self._ctrl_initial_angle_rad = 0.0
 
     @Slot()
     def start_sim(self) -> None:
@@ -104,22 +117,56 @@ class SimWorker(QObject):
         except Exception:
             pass
 
-        self._sim.reset(pendulum_down=True)
+        last_reading = self._sim.reset(pendulum_down=True)
         self._running = True
         step_count    = 0
         wall_next     = time.perf_counter()
 
         while self._running:
+
             if self._reset_flag:
-                self._reset_flag = False
-                self._sim.reset(pendulum_down=True)
+                self._reset_flag  = False
+                self._ctrl_active = False
+                last_reading = self._sim.reset(pendulum_down=True)
                 wall_next = time.perf_counter()
 
-            reading = self._sim.step(self._pwm)
-            step_count += 1
+            if self._ctrl_start_flag:
+                self._ctrl_start_flag = False
+                self._ctrl_active     = True
+                last_reading = self._sim.reset(
+                    initial_angle_rad=self._ctrl_initial_angle_rad
+                )
+                wall_next = time.perf_counter()
+
+            if self._ctrl_stop_flag:
+                self._ctrl_stop_flag = False
+                self._ctrl_active    = False
+                self._pwm            = 0
+
+            # choose PWM source
+            if self._ctrl_active and self._controller is not None:
+                try:
+                    pwm = self._controller.compute(
+                        last_reading.pend_enc,
+                        last_reading.motor_enc,
+                        last_reading.t_us,
+                    )
+                except Exception as e:
+                    self._ctrl_active = False
+                    self.ctrl_error.emit(str(e))
+                    pwm = 0
+            else:
+                pwm = self._pwm
+
+            last_reading = self._sim.step(pwm)
+            step_count  += 1
 
             if step_count % _DATA_EMIT_EVERY == 0:
-                self.data_ready.emit(reading.t_us, reading.motor_enc, reading.pend_enc)
+                self.data_ready.emit(
+                    last_reading.t_us,
+                    last_reading.motor_enc,
+                    last_reading.pend_enc,
+                )
 
             if renderer is not None and step_count % RENDER_EVERY == 0:
                 renderer.update_scene(self._sim._data)
@@ -133,6 +180,8 @@ class SimWorker(QObject):
         if renderer is not None:
             renderer.close()
 
+    # --- slots called via DirectConnection from main thread (GIL-safe) ---
+
     @Slot(int)
     def set_pwm(self, pwm: int) -> None:
         self._pwm = pwm
@@ -143,19 +192,29 @@ class SimWorker(QObject):
         self._reset_flag = True
 
     @Slot()
+    def activate_controller(self) -> None:
+        self._ctrl_start_flag = True
+
+    @Slot()
+    def deactivate_controller(self) -> None:
+        self._ctrl_stop_flag = True
+
+    @Slot()
     def stop(self) -> None:
         self._running = False
 
 
 class MainWindow(QMainWindow):
 
-    _send_pwm   = Signal(int)
-    _send_reset = Signal()
+    _send_pwm        = Signal(int)
+    _send_reset      = Signal()
+    _send_ctrl_start = Signal()
+    _send_ctrl_stop  = Signal()
 
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Inverted Pendulum Monitor")
-        self.resize(1200, 720)
+        self.resize(1400, 900)
 
         self._ring = RingBuffer(MAXLEN)
 
@@ -173,6 +232,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
         self.setCentralWidget(splitter)
 
+        # ── Left: plots ────────────────────────────────────────────────
         plot_widget = QWidget()
         plot_layout = QVBoxLayout(plot_widget)
         plot_layout.setContentsMargins(4, 4, 4, 4)
@@ -194,6 +254,7 @@ class MainWindow(QMainWindow):
         plot_layout.addWidget(self._arm_plot)
         splitter.addWidget(plot_widget)
 
+        # ── Right: 3D view + controls ───────────────────────────────────
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(6, 6, 6, 6)
@@ -208,8 +269,11 @@ class MainWindow(QMainWindow):
         view_layout.addWidget(self._view_label, alignment=Qt.AlignCenter)
         right_layout.addWidget(view_box)
 
-        right_layout.addWidget(self._build_control_panel())
-        right_layout.addStretch()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setWidget(self._build_control_panel())
+        right_layout.addWidget(scroll)
 
         splitter.addWidget(right_widget)
         splitter.setStretchFactor(0, 3)
@@ -224,6 +288,7 @@ class MainWindow(QMainWindow):
         mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         mono.setPointSize(11)
 
+        # Live readings
         status_box    = QGroupBox("Live readings")
         status_layout = QGridLayout(status_box)
         self._lbl_pend = QLabel("-- deg")
@@ -236,6 +301,7 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self._lbl_arm,       1, 1)
         layout.addWidget(status_box)
 
+        # Set-and-apply command
         cmd_box    = QGroupBox("Set command")
         cmd_layout = QGridLayout(cmd_box)
 
@@ -264,6 +330,7 @@ class MainWindow(QMainWindow):
         cmd_layout.addWidget(btn_stop,  4, 1)
         layout.addWidget(cmd_box)
 
+        # Jog
         jog_box    = QGroupBox("Jog  (hold to move, releases to 0)")
         jog_layout = QGridLayout(jog_box)
 
@@ -284,6 +351,48 @@ class MainWindow(QMainWindow):
         jog_layout.addWidget(btn_ccw, 1, 1)
         layout.addWidget(jog_box)
 
+        # External controller
+        ctrl_box    = QGroupBox("External Controller")
+        ctrl_layout = QGridLayout(ctrl_box)
+
+        ctrl_layout.addWidget(QLabel("Script:"), 0, 0)
+        self._ctrl_path_edit = QLineEdit()
+        self._ctrl_path_edit.setPlaceholderText("path/to/controller.py")
+        ctrl_layout.addWidget(self._ctrl_path_edit, 0, 1)
+        btn_browse = QPushButton("···")
+        btn_browse.setFixedWidth(32)
+        btn_browse.clicked.connect(self._browse_controller)
+        ctrl_layout.addWidget(btn_browse, 0, 2)
+
+        ctrl_layout.addWidget(QLabel("Perturbation from upright:"), 1, 0)
+        perturb_row = QWidget()
+        perturb_layout = QHBoxLayout(perturb_row)
+        perturb_layout.setContentsMargins(0, 0, 0, 0)
+        self._ctrl_perturb_spin = QDoubleSpinBox()
+        self._ctrl_perturb_spin.setRange(0.0, 30.0)
+        self._ctrl_perturb_spin.setSingleStep(0.5)
+        self._ctrl_perturb_spin.setDecimals(1)
+        self._ctrl_perturb_spin.setValue(5.0)
+        perturb_layout.addWidget(self._ctrl_perturb_spin)
+        perturb_layout.addWidget(QLabel("deg"))
+        ctrl_layout.addWidget(perturb_row, 1, 1, 1, 2)
+
+        self._ctrl_start_btn = QPushButton("Start control")
+        self._ctrl_start_btn.clicked.connect(self._start_control)
+        self._ctrl_stop_btn  = QPushButton("Stop control")
+        self._ctrl_stop_btn.clicked.connect(self._stop_control)
+        self._ctrl_stop_btn.setEnabled(False)
+        ctrl_layout.addWidget(self._ctrl_start_btn, 2, 0, 1, 2)
+        ctrl_layout.addWidget(self._ctrl_stop_btn,  2, 2)
+
+        self._ctrl_status_lbl = QLabel("Idle")
+        self._ctrl_status_lbl.setFont(mono)
+        ctrl_layout.addWidget(QLabel("Status:"), 3, 0)
+        ctrl_layout.addWidget(self._ctrl_status_lbl, 3, 1, 1, 2)
+
+        layout.addWidget(ctrl_box)
+
+        # Reset
         btn_reset = QPushButton("Reset simulation")
         btn_reset.clicked.connect(self._reset_sim)
         layout.addWidget(btn_reset)
@@ -298,9 +407,12 @@ class MainWindow(QMainWindow):
         self._thread.started.connect(self._worker.start_sim)
         self._worker.data_ready.connect(self._on_data)
         self._worker.frame_ready.connect(self._on_frame)
+        self._worker.ctrl_error.connect(self._on_ctrl_error)
 
-        self._send_pwm.connect(self._worker.set_pwm,         Qt.DirectConnection)
-        self._send_reset.connect(self._worker.request_reset, Qt.DirectConnection)
+        self._send_pwm.connect(self._worker.set_pwm,               Qt.DirectConnection)
+        self._send_reset.connect(self._worker.request_reset,        Qt.DirectConnection)
+        self._send_ctrl_start.connect(self._worker.activate_controller,   Qt.DirectConnection)
+        self._send_ctrl_stop.connect(self._worker.deactivate_controller,  Qt.DirectConnection)
 
         self._thread.start()
 
@@ -333,6 +445,65 @@ class MainWindow(QMainWindow):
         self._lbl_pend.setText(f"{pend[-1]:+.1f} deg")
         self._lbl_arm.setText(f"{arm[-1]:+.1f} deg")
 
+    # ── controller ─────────────────────────────────────────────────────
+
+    def _browse_controller(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select controller script", str(root), "Python files (*.py)"
+        )
+        if path:
+            self._ctrl_path_edit.setText(path)
+
+    def _start_control(self) -> None:
+        path = Path(self._ctrl_path_edit.text().strip())
+        if not path.exists():
+            self._ctrl_status_lbl.setText("Error: file not found")
+            return
+
+        spec = importlib.util.spec_from_file_location("user_controller", path)
+        mod  = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(mod)
+        except Exception as e:
+            self._ctrl_status_lbl.setText(f"Error loading: {e}")
+            return
+
+        if not hasattr(mod, "Controller"):
+            self._ctrl_status_lbl.setText("Error: no Controller class found")
+            return
+
+        try:
+            ctrl = mod.Controller()
+            ctrl.reset()
+        except Exception as e:
+            self._ctrl_status_lbl.setText(f"Error init: {e}")
+            return
+
+        perturbation_rad = self._ctrl_perturb_spin.value() * math.pi / 180.0
+
+        self._worker._controller             = ctrl
+        self._worker._ctrl_initial_angle_rad = perturbation_rad
+        self._ring.clear()
+        self._send_ctrl_start.emit()
+
+        self._ctrl_status_lbl.setText("Active")
+        self._ctrl_start_btn.setEnabled(False)
+        self._ctrl_stop_btn.setEnabled(True)
+
+    def _stop_control(self) -> None:
+        self._send_ctrl_stop.emit()
+        self._ctrl_status_lbl.setText("Idle")
+        self._ctrl_start_btn.setEnabled(True)
+        self._ctrl_stop_btn.setEnabled(False)
+
+    @Slot(str)
+    def _on_ctrl_error(self, msg: str) -> None:
+        self._ctrl_status_lbl.setText(f"Error: {msg}")
+        self._ctrl_start_btn.setEnabled(True)
+        self._ctrl_stop_btn.setEnabled(False)
+
+    # ── manual controls ─────────────────────────────────────────────────
+
     def _sync_volt_from_pwm(self, pwm: int) -> None:
         self._volt_spin.blockSignals(True)
         self._volt_spin.setValue(pwm * 12.0 / PWM_MAX)
@@ -355,6 +526,10 @@ class MainWindow(QMainWindow):
         self._pwm_spin.setValue(0)
         self._volt_spin.setValue(0.0)
         self._ring.clear()
+        if self._worker._ctrl_active:
+            self._ctrl_status_lbl.setText("Idle")
+            self._ctrl_start_btn.setEnabled(True)
+            self._ctrl_stop_btn.setEnabled(False)
         self._send_reset.emit()
 
     def closeEvent(self, event):

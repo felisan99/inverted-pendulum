@@ -61,9 +61,13 @@ class PendulumSim:
         self._render_mode = render_mode
         self._viewer = None
 
-    def reset(self, pendulum_down: bool = True) -> SensorReading:
+    def reset(self, pendulum_down: bool = True,
+              initial_angle_rad: float | None = None) -> SensorReading:
         mujoco.mj_resetData(self._model, self._data)
-        self._data.qpos[1] = math.pi if pendulum_down else 0.0
+        if initial_angle_rad is not None:
+            self._data.qpos[1] = initial_angle_rad
+        else:
+            self._data.qpos[1] = math.pi if pendulum_down else 0.0
         mujoco.mj_forward(self._model, self._data)
         return self._read_sensors()
 
