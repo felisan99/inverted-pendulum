@@ -51,7 +51,7 @@ python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mu
   - Observation space (6-dim): `[sin(motor), cos(motor), vel_motor, sin(pendulum), cos(pendulum), vel_pendulum]`
   - Sensor quantization in `get_observation()` mimicking the real AS5600 encoder (pendulum) and Hall encoder (motor)
   - Two tasks: `"equilibrium"` (balance upright) and `"swing_up"` (from hanging position)
-  - DC motor dynamics: voltage passed directly as `data.ctrl[0] = voltage`; the `general` actuator in the XML computes torque via `gainprm=0.2116` and `biasprm=-0.2311` (validated against real hardware)
+  - DC motor dynamics: voltage passed directly as `data.ctrl[0] = voltage`; the `general` actuator in the XML computes torque via `gainprm=0.2184` and `biasprm=-0.2385` (validated against real hardware)
   - Simulation timestep: 0.001 s (1 kHz), matching the ESP32 firmware rate
 
 - **`agents/trainer.py`** - `RLTrainer` class wrapping Stable-Baselines3. Supports PPO, SAC, A2C. Saves results to `results/run_N/` with TensorBoard logs, monitor CSVs, and model checkpoints.
@@ -70,7 +70,7 @@ python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mu
 
 - **`configs/`** - TOML configuration files for `characterize_system.py`. Each file defines physical parameters, initial conditions, input signal, and output paths.
 
-- **`scripts/gui_monitor.py`** - Real-time desktop GUI (PySide6 + PyQtGraph). Runs `PendulumSim` at 1 kHz in a `QThread` and shows live plots of both joints plus an offscreen 3D render (`mujoco.Renderer`). Control panel: set PWM/voltage (Apply), hold-to-move jog buttons, Reset. Run with `python scripts/gui_monitor.py`; requires a display.
+- **`scripts/gui_monitor.py`** - Real-time desktop GUI (PySide6 + PyQtGraph). Runs `PendulumSim` at 1 kHz in a `QThread` and shows live plots of both joints plus an offscreen 3D render (`mujoco.Renderer`). Control panel: set PWM/voltage (Apply), hold-to-move jog buttons, Reset. Supports loading external controller scripts (see `docs/custom-controller-tutorial.md`). Run with `python scripts/gui_monitor.py`; requires a display.
 
 - **`utils/plotting.py`** - Plots learning curves from SB3 Monitor CSV files.
 
@@ -120,7 +120,7 @@ python mujoco_sim/analisis_step_100_comparacion.py --real <ruta_al_CSV_real>
 | ζ | 0.01140 | 0.01152 | 1.07% |
 | Amplitude ratio | 1.0 | ~0.94 | ~6% |
 
-The ~6% amplitude deficit is attributed to motor resistance uncertainty (measured at 5 V: 4.808 Ω; model value: 5.16 Ω). Not corrected because both values come from empirical measurements.
+Rm updated to 5.0 Ω (midpoint between 4.808 Ω measured at 5V and 5.5 Ω measured at 12V, consistent with voltmeter measurement between terminals). Expected to reduce the ~6% amplitude deficit to ~3%.
 
 ## GUI Monitor architecture
 
@@ -152,9 +152,26 @@ The plot refreshes at 30 Hz. Emitting 1000 cross-thread queued signals per secon
 | Pendulum | `pend_enc * 360/4096 - 180` | 0° = upright, ±180° = hanging |
 | Arm | `motor_enc * 360/1716` | Cumulative degrees, unbounded |
 
+**Controller script system**
+
+The GUI can load an arbitrary Python script that defines a `Controller` class with two methods:
+
+```python
+class Controller:
+    def reset(self) -> None: ...
+    def compute(self, pend_enc: int, motor_enc: int, t_us: int) -> int: ...
+```
+
+`compute()` is called every simulation step and must return a PWM value in `[-1023, +1023]`. The GUI passes raw encoder counts — `pend_enc` is 0–4095 (0 = upright), `motor_enc` is unbounded signed Hall counts, `t_us` is simulation time in microseconds.
+
+Loading flow: the user selects a script file and an initial perturbation angle, then clicks **Start control**. `SimWorker` re-imports the module fresh (so edits take effect without restarting), calls `reset()`, then routes every `step()` call through `compute()` instead of the manual PWM flag. If `compute()` raises, the worker catches the exception, sets PWM to 0, and emits an error string to the status label. **Stop control** returns to manual mode.
+
+The script file and `Controller` class live entirely outside this repo; no imports from the project are needed. See `docs/custom-controller-tutorial.md` for the full interface contract, sensor reference, and examples (`controllers/pid_example.py`, `controllers/threshold_example.py`).
+
 **Extending the GUI**
 - New command: add a flag to `SimWorker`, apply it in the loop, add a `@Slot` connected with `Qt.DirectConnection`.
 - New plot: add a column to `RingBuffer`, update `_on_data` and `_refresh_plots`.
+- New controller feature: the interface contract is the only coupling point; anything else can be added to `Controller` freely.
 
 ## CI
 

@@ -7,7 +7,7 @@ Las marcadas con (BLOQUEANTE) deben completarse antes de iniciar entrenamiento R
 
 ## Correcciones críticas
 
-### [ ] T01 — Corregir paso de voltaje al actuador en `pendulum_env.py` (BLOQUEANTE)
+### [x] T01 — Corregir paso de voltaje al actuador en `pendulum_env.py` (BLOQUEANTE)
 
 **Archivo**: `gym_envs/pendulum_env.py`
 
@@ -25,7 +25,7 @@ Cambios a realizar:
 
 ---
 
-### [ ] T02 — Eliminar archivos muertos
+### [x] T02 — Eliminar archivos muertos
 
 **Archivos**: `mujoco_sim/simulation.py`, `mujoco_sim/trayectorias.py`, `main.py`
 
@@ -37,7 +37,7 @@ Verificar con `grep -r` que ningún archivo activo importa estos módulos antes 
 
 ---
 
-### [ ] T03 — Limpiar `agents/ppo_agent.py` y `utils/plotting.py`
+### [x] T03 — Limpiar `agents/ppo_agent.py` y `utils/plotting.py`
 
 **Archivos**: `agents/ppo_agent.py`, `utils/plotting.py`
 
@@ -48,7 +48,7 @@ Verificar con `grep -r` que ningún archivo activo importa estos módulos antes 
 
 ## Simplificación del config TOML
 
-### [ ] T04 — Eliminar la sección `[density]` del config y del código
+### [x] T04 — Eliminar la sección `[density]` del config y del código
 
 **Archivos**: `configs/step_1023_100_sim.toml`, `configs/characterization_step.toml`, `configs/characterization_impulse.toml`, `mujoco_sim/characterize_system.py`
 
@@ -61,7 +61,7 @@ Cambios:
 
 ---
 
-### [ ] T05 — Simplificar los parámetros del motor en el config TOML
+### [x] T05 — Simplificar los parámetros del motor en el config TOML
 
 **Archivos**: `configs/step_1023_100_sim.toml`, `mujoco_sim/characterize_system.py`
 
@@ -75,7 +75,7 @@ Cambios:
 
 ---
 
-### [ ] T06 — Actualizar o eliminar configs de caracterización obsoletos
+### [x] T06 — Actualizar o eliminar configs de caracterización obsoletos
 
 **Archivos**: `configs/characterization_step.toml`, `configs/characterization_impulse.toml`
 
@@ -85,7 +85,7 @@ Estos dos configs tienen parámetros del motor incorrectos (R=10 Ω, Kt=0.686, K
 
 ## Flujo sim-to-real
 
-### [ ] T07 — Extraer parámetros del step automáticamente desde el CSV real
+### [x] T07 — Extraer parámetros del step automáticamente desde el CSV real
 
 **Archivo**: `mujoco_sim/analisis_step_100_comparacion.py`
 
@@ -98,7 +98,7 @@ Cambios:
 
 ---
 
-### [ ] T08 — Agregar modo headless al script de comparación
+### [x] T08 — Agregar modo headless al script de comparación
 
 **Archivo**: `mujoco_sim/analisis_step_100_comparacion.py`
 
@@ -108,7 +108,7 @@ El script actualmente siempre intenta mostrar o guardar la gráfica. Agregar un 
 
 ## Entorno RL
 
-### [ ] T09 — Verificar consistencia del timestep entre el entorno RL y el modelo validado
+### [x] T09 — Verificar consistencia del timestep entre el entorno RL y el modelo validado
 
 **Archivo**: `gym_envs/pendulum_env.py`
 
@@ -121,7 +121,7 @@ Verificar:
 
 ---
 
-### [ ] T10 — Mover scripts de validación manual fuera de `test/`
+### [x] T10 — Mover scripts de validación manual fuera de `test/`
 
 **Archivos**: `test/random_episode_test.py`, `test/max_voltage_test.py`
 
@@ -133,7 +133,7 @@ Actualizar referencias en `CLAUDE.md` y `AGENTS.md`.
 
 ## Documentación
 
-### [ ] T11 — Escribir `README.md`
+### [x] T11 — Escribir `README.md`
 
 El archivo actual es un placeholder. Escribir con:
 - Descripción del proyecto (péndulo de Furuta, RL + sim-to-real).

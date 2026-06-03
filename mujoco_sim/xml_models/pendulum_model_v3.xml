@@ -121,22 +121,22 @@
             DC motor JGA25-370, gearbox n=78, supply Vmax=12 V
             Measured parameters (context/hardware.md, notes/experimento-corriente-libre/,
                                   notes/experimento-corriente-stall/):
-              Rm          = 5.16  Ω           terminal resistance
+              Rm          = 5.0   Ω           terminal resistance (midpoint: 4.808 Ω @ 5V, 5.5 Ω @ 12V)
               Kt,sal      = 1.092 N·m/A       torque constant at output shaft (n * Kt_motor)
               Ke,sal      = 1.092 V·s/rad     back-EMF constant at output shaft
-              tau_stall   = Kt,sal * Vmax/Rm  = 2.540 N·m
+              tau_stall   = Kt,sal * Vmax/Rm  = 2.621 N·m
 
-            gainprm  = Kt,sal / Rm              = 1.092 / 5.16  = 0.2116  [N·m / V]
-            biasprm  = -Kt,sal * Ke,sal / Rm    = -1.092² / 5.16 = -0.2311 [N·m / (rad/s)]
+            gainprm  = Kt,sal / Rm              = 1.092 / 5.0  = 0.2184  [N·m / V]
+            biasprm  = -Kt,sal * Ke,sal / Rm    = -1.092² / 5.0 = -0.2385 [N·m / (rad/s)]
 
             Steady-state check: omega_ss = Vmax / Ke,sal = 12 / 1.092 ≈ 10.99 rad/s
             Measured: 10.47–10.90 rad/s  (within 5 %)
         -->
         <general name="dc_motor" joint="joint1"
-                 gaintype="fixed"  gainprm="0.2116"
-                 biastype="affine" biasprm="0 0 -0.2311"
+                 gaintype="fixed"  gainprm="0.2184"
+                 biastype="affine" biasprm="0 0 -0.2385"
                  ctrlrange="-12 12"
-                 forcerange="-2.540 2.540"/>
+                 forcerange="-2.621 2.621"/>
     </actuator>
 
     <sensor>

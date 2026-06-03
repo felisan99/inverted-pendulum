@@ -40,11 +40,11 @@ Derived canonical parameters: gamma = J2zz + m2*l2² = 1.8252e-3 kg·m², delta 
 
 | Parameter | Symbol | Value | Derivation |
 |---|---|---|---|
-| Actuator gain | gainprm | 0.2116 N·m/V | Kt,sal / Rm = 1.092 / 5.16 |
-| Back-EMF damping | biasprm[2] | -0.2311 N·m·s/rad | -Kt,sal² / Rm |
+| Actuator gain | gainprm | 0.2184 N·m/V | Kt,sal / Rm = 1.092 / 5.0 |
+| Back-EMF damping | biasprm[2] | -0.2385 N·m·s/rad | -Kt,sal² / Rm |
 | Control range | ctrlrange | ±12 V | Supply voltage |
-| Stall torque | forcerange | ±2.540 N·m | Kt,sal * Vmax / Rm |
-| Terminal resistance | Rm | 5.16 Ω | Stall current experiment (range 4.8–5.5 Ω) |
+| Stall torque | forcerange | ±2.621 N·m | Kt,sal * Vmax / Rm |
+| Terminal resistance | Rm | 5.0 Ω | Midpoint between 4.808 Ω (measured at 5V) and 5.5 Ω (measured at 12V) |
 | Torque/back-EMF constant (output shaft) | Kt,sal = Ke,sal | 1.092 N·m/A | n * Kt_motor, n=78 |
 
 ### Friction and damping
@@ -103,7 +103,7 @@ python mujoco_sim/visualizar_step_100.py --speed 3.0
 
 ### 2. Interactive GUI monitor
 
-Real-time desktop interface for manual testing. Runs the simulation at 1 kHz, shows live plots of both joints, an embedded 3D view, and lets you send PWM or voltage commands interactively.
+Real-time desktop interface for manual testing and controller development. Runs the simulation at 1 kHz, shows live plots of both joints, an embedded 3D view, and lets you send PWM or voltage commands interactively.
 
 ```bash
 python scripts/gui_monitor.py
@@ -111,7 +111,20 @@ python scripts/gui_monitor.py
 
 The window has two panels:
 - **Left**: rolling 5-second plots of pendulum angle (0° = upright, ±180° = hanging) and arm cumulative position.
-- **Right**: offscreen 3D render, PWM/voltage set-and-apply controls, hold-to-move jog buttons, and a reset button.
+- **Right**: offscreen 3D render, PWM/voltage set-and-apply controls, hold-to-move jog buttons, a reset button, and an **External Controller** section.
+
+**Testing a custom controller**
+
+The External Controller section lets you load any Python script that defines a `Controller` class. Your script receives raw encoder values at 1 kHz and returns a PWM command — no project imports needed.
+
+1. In the **External Controller** panel, type the path to your script or click `···` to browse.
+2. Set the **Perturbation from upright** angle (2–5° is a reasonable starting point).
+3. Click **Start control**. The simulation resets with the pendulum at that angle and your controller takes over.
+4. Click **Stop control** to return to manual mode.
+
+The module is re-imported on every Start, so you can edit your script and click Start again without restarting the GUI.
+
+See [docs/custom-controller-tutorial.md](docs/custom-controller-tutorial.md) for the full interface contract, sensor reference, and worked examples. Ready-to-run examples are in `controllers/`.
 
 Requires a display. No CLI arguments.
 

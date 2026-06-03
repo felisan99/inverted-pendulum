@@ -52,27 +52,27 @@ encoder_frictionloss = 0.0       # [N·m] — sin medicion directa
 # ============================================================
 # [motor] — JGA25-370, reductora 78:1, alimentacion 12 V
 #
-# gainprm  = Kt,sal / Rm = 1.092 / 5.16 = 0.2116 N·m/V
+# gainprm  = Kt,sal / Rm = 1.092 / 5.0 = 0.2184 N·m/V
 #   -> omega_ss teorico = Vmax/Ke,sal = 12/1.092 = 10.99 rad/s
 #   -> omega_ss medido sin pendulo  = 10.90 rad/s  (error 0.8%)
 #   -> omega_ss medido con pendulo  = 10.47 rad/s  (error 4.7%)
-# biasprm  = -(Kt,sal * Ke,sal) / Rm = -(1.092^2) / 5.16 = -0.2311 N·m/(rad/s)
+# biasprm  = -(Kt,sal * Ke,sal) / Rm = -(1.092^2) / 5.0 = -0.2385 N·m/(rad/s)
 # armature = rotor_inertia * n^2 = 1.446e-6 * 78^2 = 8.797e-3 kg·m²
 #   (derivado de tau_rise experimento-respuesta-escalon/ sin pendulo)
 #
 # Fuentes electricas:
-#   resistance_ohm    — stall: 12V/2.18A y 5V/1.04A -> 5.16 Ω (rango 4.8–5.5)
+#   resistance_ohm    — punto medio entre 4.808 Ω (medido a 5V) y 5.5 Ω (medido a 12V); similar al voltimetro entre bornes
 #   torque_constant   — Kt,sal = n * Kt_motor = 78 * 0.01400
 #   back_emf_constant — idem (Kt = Ke en SI para motor DC)
-#   stall_torque_nm   — Kt,sal * Vmax / Rm = 1.092 * 12 / 5.16 = 2.540 N·m
+#   stall_torque_nm   — Kt,sal * Vmax / Rm = 1.092 * 12 / 5.0 = 2.621 N·m
 # ============================================================
 [motor]
 max_voltage          = 12.0       # V
-gainprm              = 0.2116     # N·m/V — Kt,sal / Rm
-biasprm              = -0.2311    # N·m/(rad/s) — -Kt,sal*Ke,sal / Rm
+gainprm              = 0.2184     # N·m/V — Kt,sal / Rm
+biasprm              = -0.2385    # N·m/(rad/s) — -Kt,sal*Ke,sal / Rm
 armature             = 8.797e-3   # kg·m² — inercia del rotor reflejada al eje de salida
-stall_torque_nm      = 2.540      # N·m — Kt,sal * Vmax / Rm
-resistance_ohm       = 5.16       # Ω — medido
+stall_torque_nm      = 2.621      # N·m — Kt,sal * Vmax / Rm
+resistance_ohm       = 5.0        # Ω — punto medio entre mediciones a 5V y 12V
 torque_constant      = 1.092      # N·m/A — eje de salida
 back_emf_constant    = 1.092      # V·s/rad — eje de salida
 
