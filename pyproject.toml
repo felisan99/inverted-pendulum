@@ -12,6 +12,7 @@ dependencies = [
     "mujoco-python-viewer>=0.1.4",
     "pyqtgraph>=0.13",
     "pyside6>=6.7",
+    "stable-baselines3>=2.8.0",
 ]
 
 [dependency-groups]

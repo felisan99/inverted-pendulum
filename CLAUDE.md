@@ -46,13 +46,12 @@ python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mu
 
 ### Key Modules
 
-- **`gym_envs/pendulum_env.py`** - The Gymnasium environment (`PendulumEnv`). This is the core of the project. It wraps a MuJoCo model and implements:
-  - Continuous action space: voltage in `[-12V, +12V]`
-  - Observation space (6-dim): `[sin(motor), cos(motor), vel_motor, sin(pendulum), cos(pendulum), vel_pendulum]`
-  - Sensor quantization in `get_observation()` mimicking the real AS5600 encoder (pendulum) and Hall encoder (motor)
-  - Two tasks: `"equilibrium"` (balance upright) and `"swing_up"` (from hanging position)
-  - DC motor dynamics: voltage passed directly as `data.ctrl[0] = voltage`; the `general` actuator in the XML computes torque via `gainprm=0.2184` and `biasprm=-0.2385` (validated against real hardware)
-  - Simulation timestep: 0.001 s (1 kHz), matching the ESP32 firmware rate
+- **`gym_envs/`** - Simulation backend, observation encoding, and RL environment, organized in three layers so a policy trained in sim can later drive the real ESP32 without re-deriving feature extraction. See `gym_envs/CLAUDE.md` for the full design. Summary:
+  - **`backend.py`** - `PendulumBackend` (a `runtime_checkable` Protocol) defines the firmware contract: signed 10-bit PWM in, raw `SensorReading(t_us, motor_enc, pend_enc)` out. `SensorReading` lives here (import it from `gym_envs.backend`). A future `HardwareBackend` would satisfy the same contract.
+  - **`pendulum_sim.py`** - `PendulumSim`, the MuJoCo implementation of `PendulumBackend`. Mirrors the firmware: PWM in, raw counts out, 1 kHz. Applies optional sensor non-idealities from a `SimConfig` (noise, latency, timing jitter). Single owner of the human 3D viewer. Used by the GUI, the controller tests, and `PendulumEnv`.
+  - **`observation.py`** - `ObservationEncoder`, the single source of truth converting a `SensorReading` to the 6-dim observation `[sin(motor), cos(motor), vel_motor, sin(pendulum), cos(pendulum), vel_pendulum]`. Same code in training and at deployment. `_MOTOR_LSB`/`_PENDULUM_LSB` live here.
+  - **`sim_config.py`** - `SimConfig` dataclass (defaults = ideal) with `from_toml()`. Profiles in `configs/sim_ideal.toml` and `configs/sim_realistic.toml`.
+  - **`pendulum_env.py`** - `PendulumEnv(gym.Env)`, a composition adapter over a backend + encoder (NOT a subclass of `PendulumSim`). Continuous action space: voltage `[-12V, +12V]`, routed through the backend's 10-bit PWM channel. Two tasks: `"equilibrium"` and `"swing_up"`. DC motor torque via the XML `general` actuator (`gainprm=0.2184`, `biasprm=-0.2385`). Timestep 0.001 s (1 kHz).
 
 - **`agents/trainer.py`** - `RLTrainer` class wrapping Stable-Baselines3. Supports PPO, SAC, A2C. Saves results to `results/run_N/` with TensorBoard logs, monitor CSVs, and model checkpoints.
 
@@ -70,13 +69,17 @@ python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mu
 
 - **`configs/`** - TOML configuration files for `characterize_system.py`. Each file defines physical parameters, initial conditions, input signal, and output paths.
 
-- **`scripts/gui_monitor.py`** - Real-time desktop GUI (PySide6 + PyQtGraph). Runs `PendulumSim` at 1 kHz in a `QThread` and shows live plots of both joints plus an offscreen 3D render (`mujoco.Renderer`). Control panel: set PWM/voltage (Apply), hold-to-move jog buttons, Reset. Supports loading external controller scripts (see `docs/custom-controller-tutorial.md`). Run with `python scripts/gui_monitor.py`; requires a display.
+- **`scripts/gui_monitor.py`** - Real-time desktop GUI (PySide6 + PyQtGraph). Runs `PendulumSim` at 1 kHz in a `QThread` and shows live plots of both joints plus an offscreen 3D render (`mujoco.Renderer`). Three-column layout: controls (left), expanding 3D view (center), stacked plots (right). Control panel: set PWM/voltage (Apply), hold-to-move jog buttons, a Disturbance ("hit") group, and Reset. Supports loading external controller scripts and trained SB3 models (see `docs/custom-controller-tutorial.md`). Run with `python scripts/gui_monitor.py`; requires a display.
 
 - **`utils/plotting.py`** - Plots learning curves from SB3 Monitor CSV files.
 
 ### Observation Design
 
-Positions are encoded as `(sin, cos)` pairs rather than raw angles to avoid discontinuities at `±π`. Velocities are estimated by finite difference over quantized positions (matching firmware behavior on the ESP32), not taken directly from MuJoCo's `qvel`.
+Feature extraction lives in `ObservationEncoder` (`gym_envs/observation.py`), shared between training and deployment. Positions are encoded as `(sin, cos)` pairs rather than raw angles to avoid discontinuities at `±π`. Velocities are estimated by finite difference over quantized positions using the measured `dt` from `t_us` (matching firmware behavior on the ESP32), not taken directly from MuJoCo's `qvel`. The pendulum angle is mapped to `[-π, π]` centered on the upright; the velocity is continuous near 0 (equilibrium) but breaks at `±π` (hanging), so `swing_up` velocity is a known limitation of the encoder.
+
+### Simulation Non-Idealities
+
+`SimConfig` (`gym_envs/sim_config.py`) parameterizes hardware imperfections so the same controller or policy can be evaluated under different conditions: `pend_noise_sigma` / `motor_noise_sigma` (AS5600 / Hall jitter in counts), `sensor_latency_steps` (I2C delay), `dt_jitter_sigma` (FreeRTOS timing jitter, microseconds per interval). All fields default to zero (ideal sim, original behavior). Pass a `SimConfig` to `PendulumSim(sim_config=...)`, to `PendulumEnv(sim_config=...)`, or to `RLTrainer(sim_config=...)`. The GUI loads `configs/sim_config.toml` by convention if present. The timing clock advances in `PendulumSim.step()` (not in `_read_sensors()`) so `reset()` always reports `t_us == 0`.
 
 ### Results Structure
 
@@ -167,6 +170,14 @@ class Controller:
 Loading flow: the user selects a script file and an initial perturbation angle, then clicks **Start control**. `SimWorker` re-imports the module fresh (so edits take effect without restarting), calls `reset()`, then routes every `step()` call through `compute()` instead of the manual PWM flag. If `compute()` raises, the worker catches the exception, sets PWM to 0, and emits an error string to the status label. **Stop control** returns to manual mode.
 
 The script file and `Controller` class live entirely outside this repo; no imports from the project are needed. See `docs/custom-controller-tutorial.md` for the full interface contract, sensor reference, and examples (`controllers/pid_example.py`, `controllers/threshold_example.py`).
+
+**Trained model system**
+
+Besides external scripts, the GUI can load a Stable-Baselines3 `.zip` (the output of `agents/trainer.py`) and let the policy drive the pendulum. The user picks the model file, the algorithm (PPO/SAC/A2C), and a Deterministic toggle, then clicks **Start model**. Internally the GUI wraps the model in `ModelController` (`gym_envs/policy_controller.py`), which has the same `Controller` shape (`reset()` + `compute()`), so `SimWorker` routes it through the exact same control path as a script; only the two UI sections differ. The crucial difference from a script is that `ModelController` reuses the project's `ObservationEncoder`, so the network sees the same 6-dim observation it was trained on (no sim-to-real feature drift). The two sources are mutually exclusive (one `_controller` slot in the worker).
+
+**Disturbance ("hit")**
+
+The control panel has a Disturbance group: a magnitude in degrees plus **Hit +** / **Hit −** buttons. Clicking emits a signed radian delta via `_send_disturb` (a `Signal(float)` on `Qt.DirectConnection`); the worker accumulates it in `_disturb_pending_rad` and, at the top of its loop, calls `PendulumSim.apply_disturbance(delta_rad)`, which bumps the pendulum joint `qpos` and re-runs `mj_forward`. It is a step disturbance on position (velocities untouched), so any active controller (manual, script, or model) has to recover. Works independently of the control source.
 
 **Extending the GUI**
 - New command: add a flag to `SimWorker`, apply it in the loop, add a `@Slot` connected with `Qt.DirectConnection`.

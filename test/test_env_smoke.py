@@ -1,10 +1,42 @@
 import math
 
-import mujoco
 import numpy as np
 import pytest
 
-from gym_envs.pendulum_env import PendulumEnv, _MOTOR_LSB, _PENDULUM_LSB
+from gym_envs.pendulum_env import PendulumEnv
+from gym_envs.backend import SensorReading
+from gym_envs.observation import _MOTOR_LSB, _PENDULUM_LSB
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _reading(t_us: int, motor_rad: float = 0.0, pend_deg: float = 0.0) -> SensorReading:
+    pend_enc  = int(round(math.radians(pend_deg) / _PENDULUM_LSB)) % 4096
+    motor_enc = int(round(motor_rad / _MOTOR_LSB))
+    return SensorReading(t_us, motor_enc, pend_enc)
+
+
+class FakeBackend:
+    """Scripted backend implementing the PendulumBackend Protocol. reset() returns
+    the first reading; each step() returns the next, holding the last when exhausted."""
+
+    def __init__(self, readings):
+        self._readings = list(readings)
+        self._i = 0
+        self.closed = False
+
+    def reset(self, *args, **kwargs):
+        self._i = 0
+        return self._readings[0]
+
+    def step(self, pwm):
+        self._i += 1
+        return self._readings[min(self._i, len(self._readings) - 1)]
+
+    def close(self):
+        self.closed = True
 
 
 # ---------------------------------------------------------------------------
@@ -37,10 +69,6 @@ def test_unknown_task_raises():
 def test_model_not_found_raises():
     with pytest.raises(FileNotFoundError):
         PendulumEnv(xml_file="/nonexistent/path/model.xml", render_mode=None)
-
-
-def test_timestep_matches_hardware(env_eq):
-    assert env_eq.xml_file.opt.timestep == pytest.approx(0.001)
 
 
 def test_action_space_bounds(env_eq):
@@ -170,10 +198,10 @@ def test_action_clipping_negative(env_eq):
     assert info["voltage"] == pytest.approx(-12.0)
 
 
-def test_zero_action_produces_finite_torque(env_eq):
+def test_max_action_maps_to_max_pwm(env_eq):
     env_eq.reset()
-    _, _, _, _, info = env_eq.step(np.array([0.0], dtype=np.float32))
-    assert np.isfinite(info["torque"])
+    _, _, _, _, info = env_eq.step(np.array([12.0], dtype=np.float32))
+    assert info["pwm"] == 1023
 
 
 # ---------------------------------------------------------------------------
@@ -198,29 +226,22 @@ def test_current_step_increments(env_eq):
 
 
 # ---------------------------------------------------------------------------
-# Termination and truncation
+# Termination and truncation (driven through a scripted backend)
 # ---------------------------------------------------------------------------
 
-def test_equilibrium_terminates_when_fallen(env_eq):
-    env_eq.reset()
-    # Push pendulum past 90° (cos < 0)
-    env_eq.data.qpos[1] = math.pi / 2 + 0.2
-    mujoco.mj_forward(env_eq.xml_file, env_eq.data)
-    _, _, terminated, _, _ = env_eq.step(np.array([0.0], dtype=np.float32))
+def test_equilibrium_terminates_when_fallen():
+    backend = FakeBackend([_reading(0, pend_deg=0.0), _reading(1000, pend_deg=100.0)])
+    env = PendulumEnv(render_mode=None, task="equilibrium", backend=backend)
+    env.reset()
+    _, _, terminated, _, _ = env.step(np.array([0.0], dtype=np.float32))
     assert terminated, "equilibrium should terminate when pendulum falls past 90°"
 
 
-def test_equilibrium_no_termination_when_upright(env_eq):
-    env_eq.reset()
-    env_eq.data.qpos[0] = 0.0
-    env_eq.data.qpos[1] = 0.0
-    env_eq.data.qvel[0] = 0.0
-    env_eq.data.qvel[1] = 0.0
-    mujoco.mj_forward(env_eq.xml_file, env_eq.data)
-    # Sync internal prev-position cache so the finite-difference velocity is 0
-    env_eq._prev_motor_pos_q    = PendulumEnv._quantize(0.0, _MOTOR_LSB)
-    env_eq._prev_pendulum_pos_q = PendulumEnv._quantize(0.0, _PENDULUM_LSB)
-    _, _, terminated, _, _ = env_eq.step(np.array([0.0], dtype=np.float32))
+def test_equilibrium_no_termination_when_upright():
+    backend = FakeBackend([_reading(0, pend_deg=0.0), _reading(1000, pend_deg=0.0)])
+    env = PendulumEnv(render_mode=None, task="equilibrium", backend=backend)
+    env.reset()
+    _, _, terminated, _, _ = env.step(np.array([0.0], dtype=np.float32))
     assert not terminated
 
 
@@ -248,7 +269,7 @@ def test_truncation_at_max_steps():
 def test_equilibrium_reward_at_perfect_upright():
     env = PendulumEnv(render_mode=None, task="equilibrium")
     obs_perfect = np.array([0.0, 1.0, 0.0, 0.0, 1.0, 0.0], dtype=np.float32)
-    reward = env.compute_reward(obs_perfect, np.array([0.0]))
+    reward = env._compute_reward(obs_perfect, np.array([0.0]))
     assert reward == pytest.approx(0.0), "reward must be 0 at perfect upright with no action"
     env.close()
 
@@ -267,15 +288,15 @@ def test_equilibrium_reward_worse_when_fallen(env_eq):
     obs_up   = np.array([0.0, 1.0, 0.0, 0.0,  1.0, 0.0], dtype=np.float32)
     obs_down = np.array([0.0, 1.0, 0.0, 0.0, -1.0, 0.0], dtype=np.float32)
     action   = np.array([0.0])
-    r_up   = env_eq.compute_reward(obs_up, action)
-    r_down = env_eq.compute_reward(obs_down, action)
+    r_up   = env_eq._compute_reward(obs_up, action)
+    r_down = env_eq._compute_reward(obs_down, action)
     assert r_up > r_down
 
 
 def test_swing_up_reward_at_perfect_upright():
     env = PendulumEnv(render_mode=None, task="swing_up")
     obs_up = np.array([0.0, 1.0, 0.0, 0.0, 1.0, 0.0], dtype=np.float32)
-    reward = env.compute_reward(obs_up, np.array([0.0]))
+    reward = env._compute_reward(obs_up, np.array([0.0]))
     # target_reward=1, upward_reward=1, no penalties → 10*1 + 2*1 = 12
     assert reward == pytest.approx(12.0)
     env.close()
@@ -285,7 +306,7 @@ def test_swing_up_reward_higher_when_upright(env_su):
     obs_up   = np.array([0.0, 1.0, 0.0, 0.0,  1.0, 0.0], dtype=np.float32)
     obs_down = np.array([0.0, 1.0, 0.0, 0.0, -1.0, 0.0], dtype=np.float32)
     action   = np.array([0.0])
-    assert env_su.compute_reward(obs_up, action) > env_su.compute_reward(obs_down, action)
+    assert env_su._compute_reward(obs_up, action) > env_su._compute_reward(obs_down, action)
 
 
 # ---------------------------------------------------------------------------
@@ -295,51 +316,32 @@ def test_swing_up_reward_higher_when_upright(env_su):
 def test_info_keys_present(env_eq):
     env_eq.reset()
     _, _, _, _, info = env_eq.step(env_eq.action_space.sample())
-    assert {"torque", "voltage", "rpm_motor", "terminated"} <= info.keys()
+    assert {"voltage", "pwm", "rpm_motor", "terminated"} <= info.keys()
 
 
 def test_info_values_finite(env_eq):
     env_eq.reset(seed=0)
     for _ in range(20):
         _, _, term, trunc, info = env_eq.step(env_eq.action_space.sample())
-        assert np.isfinite(info["torque"])
         assert np.isfinite(info["voltage"])
         assert np.isfinite(info["rpm_motor"])
         if term or trunc:
             env_eq.reset(seed=0)
 
 
-def test_info_rpm_proportional_to_qvel(env_eq):
+def test_info_rpm_matches_obs_motor_vel(env_eq):
     env_eq.reset()
     for _ in range(30):
-        _, _, term, _, info = env_eq.step(np.array([12.0], dtype=np.float32))
-        expected_rpm = (env_eq.data.qvel[0] * 60) / (2 * math.pi)
+        obs, _, term, _, info = env_eq.step(np.array([12.0], dtype=np.float32))
+        expected_rpm = (obs[2] * 60) / (2 * math.pi)
         assert info["rpm_motor"] == pytest.approx(expected_rpm, rel=1e-5)
         if term:
             break
 
 
 # ---------------------------------------------------------------------------
-# Quantization
+# Sensor resolution
 # ---------------------------------------------------------------------------
-
-def test_quantize_zero():
-    assert PendulumEnv._quantize(0.0, _MOTOR_LSB) == pytest.approx(0.0)
-
-
-def test_quantize_exact_multiple():
-    assert PendulumEnv._quantize(3 * _MOTOR_LSB, _MOTOR_LSB) == pytest.approx(3 * _MOTOR_LSB)
-
-
-def test_quantize_rounds_down():
-    val = 1.4 * _MOTOR_LSB
-    assert PendulumEnv._quantize(val, _MOTOR_LSB) == pytest.approx(_MOTOR_LSB)
-
-
-def test_quantize_rounds_up():
-    val = 1.6 * _MOTOR_LSB
-    assert PendulumEnv._quantize(val, _MOTOR_LSB) == pytest.approx(2 * _MOTOR_LSB)
-
 
 def test_pendulum_lsb_finer_than_motor_lsb():
     """AS5600 (12-bit) should have finer resolution than Hall encoder (1716 steps)."""

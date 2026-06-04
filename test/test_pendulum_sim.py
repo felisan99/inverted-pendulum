@@ -1,6 +1,7 @@
 import math
 import pytest
-from gym_envs.pendulum_sim import PendulumSim, SensorReading
+from gym_envs.pendulum_sim import PendulumSim
+from gym_envs.backend import SensorReading
 
 _PENDULUM_LSB = 2 * math.pi / 4096
 _MOTOR_LSB    = 2 * math.pi / 1716

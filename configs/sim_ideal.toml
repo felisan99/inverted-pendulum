@@ -1,0 +1,7 @@
+# Ideal sensors: no noise, no latency, no timing jitter.
+# Reproduces the original noise-free simulation behaviour.
+[sim_config]
+pend_noise_sigma     = 0.0
+motor_noise_sigma    = 0.0
+sensor_latency_steps = 0
+dt_jitter_sigma      = 0.0

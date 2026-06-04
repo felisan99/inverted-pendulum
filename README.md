@@ -75,6 +75,62 @@ Velocities are estimated by finite difference over quantized positions, replicat
 
 ---
 
+## Architecture: backend, encoder, environment
+
+The simulation code in `gym_envs/` is organized in three decoupled layers so that a
+policy trained in simulation can later drive the real ESP32 without re-deriving any
+feature extraction. See [gym_envs/CLAUDE.md](gym_envs/CLAUDE.md) for the full design.
+
+| Layer | File | Role |
+|---|---|---|
+| Contract | `backend.py` | `PendulumBackend` Protocol + `SensorReading`. PWM in, raw counts out. The firmware API. |
+| Plant | `pendulum_sim.py` | `PendulumSim`: MuJoCo implementation of the backend, with optional sensor non-idealities. |
+| Features | `observation.py` | `ObservationEncoder`: raw counts to the 6-dim policy observation. Shared sim/deploy. |
+| Environment | `pendulum_env.py` | `PendulumEnv(gym.Env)`: composition over backend + encoder + reward. Training only. |
+
+`PendulumEnv` is built by composition over a `PendulumBackend`, not by subclassing
+`PendulumSim`. At deployment there is no `PendulumEnv`: you use a `HardwareBackend`
+(the real ESP32 link, future work) plus the same `ObservationEncoder` and the trained
+network.
+
+## Simulating hardware non-idealities
+
+`SimConfig` (`gym_envs/sim_config.py`) parameterizes hardware imperfections so the same
+controller or RL policy can be evaluated under different conditions. Every field defaults
+to its ideal value (zero effect), so the default is the original noise-free simulation.
+
+| Field | Units | Models |
+|---|---|---|
+| `pend_noise_sigma` | AS5600 counts | Magnetic jitter on the pendulum encoder |
+| `motor_noise_sigma` | Hall counts | Noise on the motor encoder |
+| `sensor_latency_steps` | steps @ 1 kHz | I2C / read latency (pure delay) |
+| `dt_jitter_sigma` | microseconds | Per-interval FreeRTOS timing jitter |
+
+Two reference profiles ship in `configs/`: `sim_ideal.toml` (all zeros) and
+`sim_realistic.toml` (estimated hardware values). Use a profile from code:
+
+```python
+from gym_envs.sim_config import SimConfig
+from gym_envs.pendulum_env import PendulumEnv
+
+cfg = SimConfig.from_toml("configs/sim_realistic.toml")
+env = PendulumEnv(task="equilibrium", sim_config=cfg, seed=0)   # noise is reproducible per seed
+```
+
+`PendulumSim`, `PendulumEnv`, and `RLTrainer` all accept a `sim_config=` argument.
+The GUI monitor loads `configs/sim_config.toml` by convention at startup if that file
+exists (it is the local active profile; the two named files above are versioned
+references). To run the GUI with realistic noise, copy a profile into place:
+
+```bash
+cp configs/sim_realistic.toml configs/sim_config.toml
+python scripts/gui_monitor.py
+```
+
+Delete or rename `configs/sim_config.toml` to return to the ideal sim.
+
+---
+
 ## Getting started
 
 Everything below assumes you have activated the virtual environment:
@@ -171,6 +227,20 @@ trainer = RLTrainer(
 trainer.train(total_timesteps=500_000, eval_freq=10_000)
 ```
 
+To train with hardware non-idealities (domain randomization for sim-to-real), pass a
+`SimConfig` (see [Simulating hardware non-idealities](#simulating-hardware-non-idealities)):
+
+```python
+from gym_envs.sim_config import SimConfig
+
+trainer = RLTrainer(
+    agent_type="PPO",
+    task="equilibrium",
+    seed=42,
+    sim_config=SimConfig.from_toml("configs/sim_realistic.toml"),
+)
+```
+
 Results saved per run:
 ```
 results/run_N/
@@ -258,10 +328,15 @@ Output paths are defined in the `[output]` section of the TOML.
 ## Repository structure
 
 ```
-configs/          TOML configuration files for characterize_system.py
+configs/          TOML configs: characterize_system.py + sim_ideal/sim_realistic (SimConfig profiles)
 controllers/      Example controller scripts (pid_example.py, threshold_example.py)
 docs/             Guides and tutorials
-gym_envs/         Gymnasium environment (PendulumEnv)
+gym_envs/         Backend, observation encoder, and RL environment (see gym_envs/CLAUDE.md)
+  backend.py      PendulumBackend Protocol + SensorReading (the firmware contract)
+  pendulum_sim.py PendulumSim: MuJoCo backend with optional sensor non-idealities
+  observation.py  ObservationEncoder: raw counts to observation (shared sim/deploy)
+  sim_config.py   SimConfig dataclass (hardware non-idealities)
+  pendulum_env.py PendulumEnv: gym.Env composition adapter
 agents/           RL training (RLTrainer) and inference (predict.py)
 mujoco_sim/       Simulation scripts and XML model
   xml_models/     pendulum_model_v3.xml — the only model

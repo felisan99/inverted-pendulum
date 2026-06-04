@@ -26,13 +26,18 @@ root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root))
 
 from gym_envs.pendulum_sim import PendulumSim, PWM_MAX
+from gym_envs.sim_config import SimConfig
+from gym_envs.policy_controller import ModelController
+
+_SIM_CONFIG_PATH = root / "configs" / "sim_config.toml"
+_RESULTS_DIR     = root / "results"
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot, QTimer, Qt
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter,
     QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QSpinBox, QDoubleSpinBox, QGroupBox,
-    QScrollArea, QLineEdit, QFileDialog,
+    QScrollArea, QLineEdit, QFileDialog, QComboBox, QCheckBox, QSizePolicy,
 )
 from PySide6.QtGui import QFontDatabase, QImage, QPixmap
 import pyqtgraph as pg
@@ -45,9 +50,11 @@ _DATA_EMIT_EVERY    = 10   # emit data_ready every N steps → 100 Hz
 HISTORY_S    = 5.0
 MAXLEN       = int(HISTORY_S * 1000 / _DATA_EMIT_EVERY)  # 500
 PLOT_HZ      = 30
-RENDER_W     = 640
-RENDER_H     = 480
+RENDER_W     = 800
+RENDER_H     = 600
 RENDER_EVERY = 33
+
+_AGENTS = ("PPO", "SAC", "A2C")
 
 
 class RingBuffer:
@@ -95,7 +102,8 @@ class SimWorker(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self._sim        = PendulumSim()
+        cfg = SimConfig.from_toml(_SIM_CONFIG_PATH) if _SIM_CONFIG_PATH.exists() else SimConfig()
+        self._sim        = PendulumSim(sim_config=cfg)
         self._pwm: int   = 0
         self._running    = False
 
@@ -108,6 +116,9 @@ class SimWorker(QObject):
         self._ctrl_stop_flag         = False
         self._controller             = None   # Controller instance
         self._ctrl_initial_angle_rad = 0.0
+
+        # pending disturbance ("hit") in radians, accumulated across clicks
+        self._disturb_pending_rad    = 0.0
 
     @Slot()
     def start_sim(self) -> None:
@@ -142,6 +153,10 @@ class SimWorker(QObject):
                 self._ctrl_stop_flag = False
                 self._ctrl_active    = False
                 self._pwm            = 0
+
+            if self._disturb_pending_rad != 0.0:
+                self._sim.apply_disturbance(self._disturb_pending_rad)
+                self._disturb_pending_rad = 0.0
 
             # choose PWM source
             if self._ctrl_active and self._controller is not None:
@@ -199,6 +214,10 @@ class SimWorker(QObject):
     def deactivate_controller(self) -> None:
         self._ctrl_stop_flag = True
 
+    @Slot(float)
+    def apply_disturbance(self, delta_rad: float) -> None:
+        self._disturb_pending_rad += delta_rad
+
     @Slot()
     def stop(self) -> None:
         self._running = False
@@ -210,6 +229,7 @@ class MainWindow(QMainWindow):
     _send_reset      = Signal()
     _send_ctrl_start = Signal()
     _send_ctrl_stop  = Signal()
+    _send_disturb    = Signal(float)
 
     def __init__(self) -> None:
         super().__init__()
@@ -232,7 +252,27 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
         self.setCentralWidget(splitter)
 
-        # ── Left: plots ────────────────────────────────────────────────
+        # ── Left: controls (always visible) ─────────────────────────────
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setWidget(self._build_control_panel())
+        scroll.setMinimumWidth(300)
+        splitter.addWidget(scroll)
+
+        # ── Center: 3D view (expanding) ─────────────────────────────────
+        view_box    = QGroupBox("3D view")
+        view_layout = QVBoxLayout(view_box)
+        view_layout.setContentsMargins(4, 4, 4, 4)
+        self._view_label = QLabel("Initializing…")
+        self._view_label.setMinimumSize(320, 240)
+        self._view_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._view_label.setAlignment(Qt.AlignCenter)
+        self._view_label.setStyleSheet("background:#111; color:#666;")
+        view_layout.addWidget(self._view_label)
+        splitter.addWidget(view_box)
+
+        # ── Right: plots (stacked, smaller) ─────────────────────────────
         plot_widget = QWidget()
         plot_layout = QVBoxLayout(plot_widget)
         plot_layout.setContentsMargins(4, 4, 4, 4)
@@ -254,30 +294,10 @@ class MainWindow(QMainWindow):
         plot_layout.addWidget(self._arm_plot)
         splitter.addWidget(plot_widget)
 
-        # ── Right: 3D view + controls ───────────────────────────────────
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(6, 6, 6, 6)
-        right_layout.setSpacing(8)
-
-        view_box    = QGroupBox("3D view")
-        view_layout = QVBoxLayout(view_box)
-        self._view_label = QLabel("Initializing…")
-        self._view_label.setFixedSize(RENDER_W, RENDER_H)
-        self._view_label.setAlignment(Qt.AlignCenter)
-        self._view_label.setStyleSheet("background:#111; color:#666;")
-        view_layout.addWidget(self._view_label, alignment=Qt.AlignCenter)
-        right_layout.addWidget(view_box)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setWidget(self._build_control_panel())
-        right_layout.addWidget(scroll)
-
-        splitter.addWidget(right_widget)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 0)
+        splitter.setSizes([300, 760, 360])
 
     def _build_control_panel(self) -> QWidget:
         panel  = QWidget()
@@ -392,11 +412,70 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(ctrl_box)
 
+        # Trained model (SB3 .zip)
+        model_box    = QGroupBox("Trained Model")
+        model_layout = QGridLayout(model_box)
+
+        model_layout.addWidget(QLabel("Model:"), 0, 0)
+        self._model_path_edit = QLineEdit()
+        self._model_path_edit.setPlaceholderText("results/run_N/best_model.zip")
+        model_layout.addWidget(self._model_path_edit, 0, 1)
+        btn_model_browse = QPushButton("···")
+        btn_model_browse.setFixedWidth(32)
+        btn_model_browse.clicked.connect(self._browse_model)
+        model_layout.addWidget(btn_model_browse, 0, 2)
+
+        model_layout.addWidget(QLabel("Algorithm:"), 1, 0)
+        self._model_algo_combo = QComboBox()
+        self._model_algo_combo.addItems(_AGENTS)
+        model_layout.addWidget(self._model_algo_combo, 1, 1)
+        self._model_deterministic = QCheckBox("Deterministic")
+        self._model_deterministic.setChecked(True)
+        model_layout.addWidget(self._model_deterministic, 1, 2)
+
+        self._model_start_btn = QPushButton("Start model")
+        self._model_start_btn.clicked.connect(self._start_model)
+        self._model_stop_btn  = QPushButton("Stop model")
+        self._model_stop_btn.clicked.connect(self._stop_control)
+        self._model_stop_btn.setEnabled(False)
+        model_layout.addWidget(self._model_start_btn, 2, 0, 1, 2)
+        model_layout.addWidget(self._model_stop_btn,  2, 2)
+
+        self._model_status_lbl = QLabel("Idle")
+        self._model_status_lbl.setFont(mono)
+        model_layout.addWidget(QLabel("Status:"), 3, 0)
+        model_layout.addWidget(self._model_status_lbl, 3, 1, 1, 2)
+
+        layout.addWidget(model_box)
+
+        # Disturbance ("hit" the pendulum)
+        hit_box    = QGroupBox("Disturbance  (hit the pendulum)")
+        hit_layout = QGridLayout(hit_box)
+
+        hit_layout.addWidget(QLabel("Magnitude:"), 0, 0)
+        self._hit_spin = QDoubleSpinBox()
+        self._hit_spin.setRange(0.5, 45.0)
+        self._hit_spin.setSingleStep(0.5)
+        self._hit_spin.setDecimals(1)
+        self._hit_spin.setValue(5.0)
+        self._hit_spin.setSuffix(" deg")
+        hit_layout.addWidget(self._hit_spin, 0, 1)
+
+        btn_hit_pos = QPushButton("Hit +")
+        btn_hit_neg = QPushButton("Hit −")
+        btn_hit_pos.clicked.connect(lambda: self._hit(+1))
+        btn_hit_neg.clicked.connect(lambda: self._hit(-1))
+        hit_layout.addWidget(btn_hit_pos, 1, 0)
+        hit_layout.addWidget(btn_hit_neg, 1, 1)
+
+        layout.addWidget(hit_box)
+
         # Reset
         btn_reset = QPushButton("Reset simulation")
         btn_reset.clicked.connect(self._reset_sim)
         layout.addWidget(btn_reset)
 
+        layout.addStretch(1)
         return panel
 
     def _start_worker(self) -> None:
@@ -413,14 +492,18 @@ class MainWindow(QMainWindow):
         self._send_reset.connect(self._worker.request_reset,        Qt.DirectConnection)
         self._send_ctrl_start.connect(self._worker.activate_controller,   Qt.DirectConnection)
         self._send_ctrl_stop.connect(self._worker.deactivate_controller,  Qt.DirectConnection)
+        self._send_disturb.connect(self._worker.apply_disturbance,         Qt.DirectConnection)
 
         self._thread.start()
 
     @Slot(int, int, int)
     def _on_data(self, t_us: int, motor_enc: int, pend_enc: int) -> None:
+        pend_deg = pend_enc * _PEND_DEG_PER_COUNT
+        if pend_deg > 180.0:
+            pend_deg -= 360.0
         self._ring.append(
             t_us * 1e-6,
-            pend_enc * _PEND_DEG_PER_COUNT - 180.0,
+            pend_deg,
             motor_enc * _ARM_DEG_PER_COUNT,
         )
 
@@ -428,7 +511,10 @@ class MainWindow(QMainWindow):
     def _on_frame(self, rgb: np.ndarray) -> None:
         h, w = rgb.shape[:2]
         img  = QImage(rgb.data, w, h, w * 3, QImage.Format.Format_RGB888)
-        self._view_label.setPixmap(QPixmap.fromImage(img))
+        pix  = QPixmap.fromImage(img).scaled(
+            self._view_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        self._view_label.setPixmap(pix)
 
     def _refresh_plots(self) -> None:
         t, pend, arm = self._ring.arrays()
@@ -479,28 +565,69 @@ class MainWindow(QMainWindow):
             self._ctrl_status_lbl.setText(f"Error init: {e}")
             return
 
-        perturbation_rad = self._ctrl_perturb_spin.value() * math.pi / 180.0
+        self._begin_control(ctrl, self._ctrl_status_lbl)
 
-        self._worker._controller             = ctrl
-        self._worker._ctrl_initial_angle_rad = perturbation_rad
+    def _browse_model(self) -> None:
+        start_dir = _RESULTS_DIR if _RESULTS_DIR.exists() else root
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select trained model", str(start_dir), "SB3 models (*.zip)"
+        )
+        if path:
+            self._model_path_edit.setText(path)
+
+    def _start_model(self) -> None:
+        path = Path(self._model_path_edit.text().strip())
+        if not path.exists():
+            self._model_status_lbl.setText("Error: file not found")
+            return
+
+        algo = self._model_algo_combo.currentText()
+        self._model_status_lbl.setText("Loading…")
+        QApplication.processEvents()
+        try:
+            from stable_baselines3 import PPO, SAC, A2C
+            cls   = {"PPO": PPO, "SAC": SAC, "A2C": A2C}[algo]
+            model = cls.load(str(path))
+        except Exception as e:
+            self._model_status_lbl.setText(f"Error loading: {e}")
+            return
+
+        ctrl = ModelController(model, deterministic=self._model_deterministic.isChecked())
+        ctrl.reset()
+        self._begin_control(ctrl, self._model_status_lbl)
+
+    def _begin_control(self, controller, status_lbl: QLabel) -> None:
+        self._worker._controller             = controller
+        self._worker._ctrl_initial_angle_rad = self._ctrl_perturb_spin.value() * math.pi / 180.0
+        self._active_status_lbl              = status_lbl
         self._ring.clear()
         self._send_ctrl_start.emit()
 
-        self._ctrl_status_lbl.setText("Active")
-        self._ctrl_start_btn.setEnabled(False)
-        self._ctrl_stop_btn.setEnabled(True)
+        self._ctrl_status_lbl.setText("Idle")
+        self._model_status_lbl.setText("Idle")
+        status_lbl.setText("Active")
+        self._set_control_active(True)
 
     def _stop_control(self) -> None:
         self._send_ctrl_stop.emit()
         self._ctrl_status_lbl.setText("Idle")
-        self._ctrl_start_btn.setEnabled(True)
-        self._ctrl_stop_btn.setEnabled(False)
+        self._model_status_lbl.setText("Idle")
+        self._set_control_active(False)
+
+    def _set_control_active(self, active: bool) -> None:
+        self._ctrl_start_btn.setEnabled(not active)
+        self._ctrl_stop_btn.setEnabled(active)
+        self._model_start_btn.setEnabled(not active)
+        self._model_stop_btn.setEnabled(active)
+
+    def _hit(self, sign: int) -> None:
+        self._send_disturb.emit(sign * self._hit_spin.value() * math.pi / 180.0)
 
     @Slot(str)
     def _on_ctrl_error(self, msg: str) -> None:
-        self._ctrl_status_lbl.setText(f"Error: {msg}")
-        self._ctrl_start_btn.setEnabled(True)
-        self._ctrl_stop_btn.setEnabled(False)
+        lbl = getattr(self, "_active_status_lbl", None) or self._ctrl_status_lbl
+        lbl.setText(f"Error: {msg}")
+        self._set_control_active(False)
 
     # ── manual controls ─────────────────────────────────────────────────
 
@@ -528,8 +655,8 @@ class MainWindow(QMainWindow):
         self._ring.clear()
         if self._worker._ctrl_active:
             self._ctrl_status_lbl.setText("Idle")
-            self._ctrl_start_btn.setEnabled(True)
-            self._ctrl_stop_btn.setEnabled(False)
+            self._model_status_lbl.setText("Idle")
+            self._set_control_active(False)
         self._send_reset.emit()
 
     def closeEvent(self, event):

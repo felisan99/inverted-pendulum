@@ -38,18 +38,15 @@ def run_max_voltage_test(xml=None):
             vel_motor = obs[2]
             vel_pendulo = obs[5]
             rpm = info.get("rpm_motor", 0.0)
-            torque = info.get("torque", 0.0)
+            pwm = info.get("pwm", 0)
 
             if env.current_step % 50 == 0:
-                print(f"Paso: {env.current_step} | Voltaje: 12V | RPM: {rpm:.1f} | Torque: {torque:.4f} Nm")
+                print(f"Paso: {env.current_step} | Voltaje: 12V | PWM: {pwm} | RPM: {rpm:.1f}")
 
             if done:
                 print("Episodio terminado.")
                 obs, info = env.reset()
                 time.sleep(1.0)
-
-            if env.data.ncon > 0:
-                print(f"Detectados {env.data.ncon} colisiones entre objetos del modelo XML.")
 
     except KeyboardInterrupt:
         print("\nPrueba detenida.")

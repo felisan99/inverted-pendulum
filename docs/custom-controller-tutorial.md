@@ -33,6 +33,25 @@ That is all. No imports from this project are required, no base class to inherit
 
 ---
 
+## Scripts vs. trained models
+
+The GUI has two separate ways to drive the pendulum:
+
+- **External Controller** (this document): an arbitrary `.py` script with a `Controller`
+  class. It lives entirely outside the repo and imports nothing from the project. You own the
+  feature extraction (raw counts in, PWM out).
+- **Trained Model**: an SB3 `.zip` produced by `agents/trainer.py`. Pick the algorithm
+  (PPO/SAC/A2C) and click **Start model**. The GUI wraps it in `gym_envs/policy_controller.py`
+  (`ModelController`), which feeds the network through the project's `ObservationEncoder`, the
+  same feature extractor used during training. You do **not** write any glue code, and you must
+  not reimplement the encoder; that is exactly what guarantees the network sees the observation
+  it was trained on (sim-to-real consistency).
+
+Both routes are mutually exclusive (one controller at a time) and both respect the
+**Disturbance** controls, so you can hit the pendulum and watch either recover.
+
+---
+
 ## Sensor quick-reference
 
 | Value | Meaning |

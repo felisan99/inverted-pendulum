@@ -5,11 +5,12 @@ from stable_baselines3 import PPO, SAC, DQN, A2C
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import EvalCallback
 from gym_envs.pendulum_env import PendulumEnv
+from gym_envs.sim_config import SimConfig
 from utils.plotting import plot_monitor_data
 import torch
 
 class RLTrainer:
-    def __init__(self, agent_type="PPO", xml_file=None, policy="MlpPolicy", agent_kwargs=None, seed=None, render_mode="human", max_steps=None, create_run_dir=True, task="equilibrium"):
+    def __init__(self, agent_type="PPO", xml_file=None, policy="MlpPolicy", agent_kwargs=None, seed=None, render_mode="human", max_steps=None, create_run_dir=True, task="equilibrium", sim_config: SimConfig | None = None):
         self.agent_type = agent_type.upper()
         self.xml_file = xml_file
         self.policy = policy
@@ -19,6 +20,7 @@ class RLTrainer:
         self.max_steps = max_steps
         self.create_run_dir = create_run_dir
         self.task = task
+        self.sim_config = sim_config
 
         self.base_dir = "results"
         self.run_dir = self._create_run_dir() if create_run_dir else None
@@ -86,7 +88,7 @@ class RLTrainer:
         """
         Crea una instancia del entorno con los wrappers necesarios.
         """
-        env = PendulumEnv(xml_file=self.xml_file, render_mode=self.render_mode if not for_prediction else "human", max_steps=self.max_steps, task=self.task)
+        env = PendulumEnv(xml_file=self.xml_file, render_mode=self.render_mode if not for_prediction else "human", max_steps=self.max_steps, task=self.task, sim_config=self.sim_config, seed=self.seed)
 
         if self.seed is not None:
             env.reset(seed=self.seed)
