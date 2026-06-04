@@ -23,12 +23,20 @@ simulation against PendulumSim and recover the upright for perturbations up to
 roughly +-12 deg (the GUI default is 5 deg); beyond that the PWM saturates and
 the pendulum cannot be caught before the divergence guard trips.
 
-EMA derivative filter
----------------------
-Both phi_dot and omega_arm are estimated by finite difference and smoothed
-with EMA to reject quantization noise:
+Sampling rate and EMA derivative filter
+---------------------------------------
+The control rate and the filter cutoff are read from configs/control_config.toml
+(see gym_envs/control_config.py); the defaults reproduce the original 1 kHz
+behaviour. The controller self-decimates: compute() is called every physics tick
+(1 kHz) but only updates the output every sample period, holding the last PWM
+(zero-order hold) in between, matching how a fixed-rate control ISR runs on the ESP32.
+
+phi_dot and omega_arm are estimated by finite difference and smoothed with EMA to
+reject quantization noise:
     y_filt[k] = alpha * y_raw[k] + (1 - alpha) * y_filt[k-1]
-    alpha = 1 - exp(-2*pi*fc/fs)  →  fc≈26 Hz at 1 kHz: alpha≈0.15
+    alpha = 1 - exp(-2*pi*fc/fs)
+The alpha is derived from the configured fs and fc, so the cutoff stays fixed when
+the sampling rate changes (1 kHz/26 Hz -> 0.15, 250 Hz/26 Hz -> 0.48).
 
 Tuning order
 ------------
@@ -39,11 +47,15 @@ Tuning order
 """
 
 import math
+from pathlib import Path
+
+from gym_envs.control_config import ControlConfig
 
 _PEND_RAD_PER_COUNT = 2.0 * math.pi / 4096
 _ARM_RAD_PER_COUNT  = 2.0 * math.pi / 1716
 _PWM_MAX            = 1023
 _DIVERGENCE_RAD     = math.radians(25.0)
+_CONFIG_PATH        = Path(__file__).resolve().parent.parent / "configs" / "control_config.toml"
 
 
 def _pend_to_rad(pend_enc: int) -> float:
@@ -60,8 +72,12 @@ class Controller:
     Kd    =  1570.6  # [PWM / (rad/s)]     pendulum angular velocity (LQR K_phi_dot)
     Ka    = -1018.6  # [PWM / rad]         arm position             (LQR K_theta1, negative)
     Kb    =  -289.4  # [PWM / (rad/s)]     arm angular velocity      (LQR K_theta1_dot, negative)
-    alpha =    0.15  # EMA for phi_dot and omega_arm — cutoff ≈ 26 Hz @ 1 kHz
     i_max =    0.5   # anti-windup clamp [rad·s]
+
+    def __init__(self) -> None:
+        cfg = ControlConfig.from_toml(_CONFIG_PATH) if _CONFIG_PATH.exists() else ControlConfig()
+        self.alpha      = cfg.ema_alpha       # EMA for phi_dot and omega_arm, derived from fs and fc
+        self._period_us = cfg.sample_period_us
 
     def reset(self) -> None:
         self._integral        = 0.0
@@ -69,7 +85,8 @@ class Controller:
         self._omega_arm_filt  = 0.0
         self._prev_phi:       float | None = None
         self._prev_motor_enc: int   | None = None
-        self._last_t:         int   | None = None
+        self._last_compute_t: int   | None = None
+        self._last_pwm:       int          = 0
 
     def compute(self, pend_enc: int, motor_enc: int, t_us: int) -> int:
         phi = _pend_to_rad(pend_enc)
@@ -78,15 +95,22 @@ class Controller:
             self.reset()
             return 0
 
-        theta_arm = motor_enc * _ARM_RAD_PER_COUNT
-
-        if self._last_t is None:
+        if self._last_compute_t is None:
             self._prev_phi       = phi
             self._prev_motor_enc = motor_enc
-            self._last_t         = t_us
+            self._last_compute_t = t_us
             return 0
 
-        dt = max((t_us - self._last_t) * 1e-6, 1e-6)
+        # Zero-order hold: only update at the configured control rate.
+        if t_us - self._last_compute_t < self._period_us:
+            return self._last_pwm
+
+        dt = max((t_us - self._last_compute_t) * 1e-6, 1e-6)
+
+        theta_arm = motor_enc * _ARM_RAD_PER_COUNT
+
+        assert self._prev_phi is not None
+        assert self._prev_motor_enc is not None
 
         # Filtered pendulum angular velocity
         phi_d_raw        = (phi - self._prev_phi) / dt
@@ -104,7 +128,7 @@ class Controller:
 
         self._prev_phi       = phi
         self._prev_motor_enc = motor_enc
-        self._last_t         = t_us
+        self._last_compute_t = t_us
 
         output = -(self.Kp * phi
                    + self.Ki * self._integral
@@ -112,4 +136,5 @@ class Controller:
                    + self.Ka * theta_arm
                    + self.Kb * self._omega_arm_filt)
 
-        return int(max(-_PWM_MAX, min(_PWM_MAX, output)))
+        self._last_pwm = int(max(-_PWM_MAX, min(_PWM_MAX, output)))
+        return self._last_pwm

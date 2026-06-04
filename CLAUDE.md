@@ -129,9 +129,16 @@ Rm updated to 5.0 Ω (midpoint between 4.808 Ω measured at 5V and 5.5 Ω measur
 
 `scripts/gui_monitor.py` uses a threading model designed around the 1 kHz simulation loop.
 
-**Threading**
-- `SimWorker` (QObject moved to `QThread`): runs `PendulumSim.step()` in a tight loop, real-time throttled with `time.sleep`. Emits `data_ready` every 10 steps (100 Hz) and `frame_ready` (offscreen render) every 33 steps (~30 Hz).
-- Main thread: Qt event loop. A `QTimer` at 30 Hz reads a `RingBuffer` and calls `setData` on the PyQtGraph curves.
+**Threading (three participants)**
+- `SimWorker` (QObject moved to a `QThread`): runs `PendulumSim.step()` in a tight loop at 1 kHz, real-time throttled with `time.sleep`. Every 10 steps (100 Hz) it emits `data_ready` and calls `StateSnapshot.publish(qpos, qvel)`. It does NOT render.
+- `RenderWorker` (QObject moved to a second `QThread`): on its own ~30 Hz loop, reads the latest `StateSnapshot`, applies it to its own `MjData`, runs `mj_forward`, then `update_scene` + `render`, and emits `frame_ready`. The `mujoco.Renderer` is created inside this thread (the GL context is thread-affine).
+- Main thread: Qt event loop. A `QTimer` at 30 Hz reads a `RingBuffer` and calls `setData` on the PyQtGraph curves; `frame_ready` lands on `_on_frame`, which scales the pixmap to the (resizable) view.
+
+**Why a dedicated render thread (measured)**
+`sim.step()` costs ~0.003 ms but `render()` costs ~4 ms (p99 ~15 ms, max 16). With the render inline in the 1 kHz loop, each render iteration stalled the physics loop for 4-16 ms, forcing `wall_next` catch-up bursts that distort the real-time pacing the monitor represents (worse with `SimConfig` jitter). A background-thread benchmark showed a Python counter ran at 40.16 M/s during `sleep` and 39.88 M/s during `render` (99.3%), i.e. **MuJoCo releases the GIL during render**, so the render thread runs in true parallel with the physics loop. After the split, the physics iteration is always sub-millisecond. (`PPO.predict()` in `ModelController` is ~0.056 ms, so running a policy at 1 kHz is not a bottleneck and is left as-is.)
+
+**Why `StateSnapshot` (lock + double copy)**
+The two threads each own a separate `MjData`; they cannot share one safely while the physics thread mutates it via `mj_step`. `StateSnapshot` is a tiny `threading.Lock`-protected `(qpos, qvel)` buffer: the physics thread `publish()`es right after `step()` (same thread, no race with `mj_step`), the render thread `read()`s a copy. Contention is negligible (publish ~100/s, read ~30/s, a few floats each). The render thread reconstructs full kinematics from the snapshot with `mj_forward`.
 
 **Why `DirectConnection` for control signals**
 The worker loop never returns to the Qt event loop, so queued slots are never delivered. `Qt.DirectConnection` makes the slot execute in the calling (main) thread, setting a plain int/bool flag the loop polls — GIL-safe in CPython.

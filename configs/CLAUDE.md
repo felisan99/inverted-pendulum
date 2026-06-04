@@ -1,6 +1,6 @@
-# configs/ — two unrelated families of TOML
+# configs/ — three unrelated families of TOML
 
-This directory holds two distinct config types. Do not mix their schemas.
+This directory holds three distinct config types. Do not mix their schemas.
 
 ## 1. Characterization configs (for `characterize_system.py`)
 
@@ -25,3 +25,20 @@ non-idealities (noise, latency, timing jitter) for `PendulumSim` / `PendulumEnv`
   exists. It is meant to be edited locally; treat it as disposable.
 
 See `gym_envs/CLAUDE.md` for how SimConfig is applied.
+
+## 3. ControlConfig profiles (for `gym_envs/control_config.py`)
+
+Files: `control_config.toml` (active) and `control_250hz.toml` (reference). They
+have a single `[control_config]` section parsed by `ControlConfig.from_toml()`.
+Two knobs: `sample_freq_hz` (control rate with zero-order hold; capped by the 1 kHz
+physics rate) and `filter_cutoff_hz` (EMA derivative-filter cutoff; the alpha is
+derived as `1 - exp(-2*pi*fc/fs)`, so the cutoff stays fixed when the rate changes).
+Loaded by the classical controllers (`controllers/pid_balance.py`) at construction.
+
+- `control_config.toml` is the local active profile; defaults (1000 Hz, 26 Hz)
+  reproduce the original 1 kHz behaviour.
+- `control_250hz.toml` is a versioned reference; copy it over `control_config.toml`
+  to run the loop at 250 Hz.
+
+Independent of the characterization configs and the SimConfig profiles: these only
+shape the classical control loop, not the XML model or sensor non-idealities.

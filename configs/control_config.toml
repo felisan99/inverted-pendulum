@@ -1,0 +1,6 @@
+# Active control-loop profile loaded by controllers/pid_balance.py by convention.
+# Edit this file to change the control rate / filter; defaults below reproduce the
+# original 1 kHz behaviour. See gym_envs/control_config.py.
+[control_config]
+sample_freq_hz   = 1000.0   # control rate with zero-order hold (capped by the 1 kHz physics rate)
+filter_cutoff_hz = 26.0     # EMA derivative-filter cutoff; alpha = 1 - exp(-2*pi*fc/fs)

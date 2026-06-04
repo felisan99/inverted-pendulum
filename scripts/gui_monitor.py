@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib.util
 import math
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -52,7 +53,7 @@ MAXLEN       = int(HISTORY_S * 1000 / _DATA_EMIT_EVERY)  # 500
 PLOT_HZ      = 30
 RENDER_W     = 800
 RENDER_H     = 600
-RENDER_EVERY = 33
+RENDER_FPS   = 30
 
 _AGENTS = ("PPO", "SAC", "A2C")
 
@@ -93,17 +94,35 @@ class RingBuffer:
         self._size = 0
 
 
+class StateSnapshot:
+    """Lock-protected handoff of (qpos, qvel) from the physics thread to the render thread."""
+
+    def __init__(self, nq: int, nv: int) -> None:
+        self._lock = threading.Lock()
+        self._qpos = np.zeros(nq)
+        self._qvel = np.zeros(nv)
+
+    def publish(self, qpos: np.ndarray, qvel: np.ndarray) -> None:
+        with self._lock:
+            self._qpos[:] = qpos
+            self._qvel[:] = qvel
+
+    def read(self) -> tuple[np.ndarray, np.ndarray]:
+        with self._lock:
+            return self._qpos.copy(), self._qvel.copy()
+
+
 class SimWorker(QObject):
     """Runs PendulumSim at 1 kHz in a background QThread."""
 
     data_ready  = Signal(int, int, int)   # t_us, motor_enc, pend_enc
-    frame_ready = Signal(object)          # numpy uint8 H×W×3 RGB
     ctrl_error  = Signal(str)             # controller compute() raised
 
     def __init__(self) -> None:
         super().__init__()
         cfg = SimConfig.from_toml(_SIM_CONFIG_PATH) if _SIM_CONFIG_PATH.exists() else SimConfig()
         self._sim        = PendulumSim(sim_config=cfg)
+        self._snapshot   = StateSnapshot(self._sim._model.nq, self._sim._model.nv)
         self._pwm: int   = 0
         self._running    = False
 
@@ -122,12 +141,6 @@ class SimWorker(QObject):
 
     @Slot()
     def start_sim(self) -> None:
-        renderer = None
-        try:
-            renderer = mujoco.Renderer(self._sim._model, height=RENDER_H, width=RENDER_W)
-        except Exception:
-            pass
-
         last_reading = self._sim.reset(pendulum_down=True)
         self._running = True
         step_count    = 0
@@ -182,18 +195,12 @@ class SimWorker(QObject):
                     last_reading.motor_enc,
                     last_reading.pend_enc,
                 )
-
-            if renderer is not None and step_count % RENDER_EVERY == 0:
-                renderer.update_scene(self._sim._data)
-                self.frame_ready.emit(renderer.render().copy())
+                self._snapshot.publish(self._sim._data.qpos, self._sim._data.qvel)
 
             wall_next += _SIM_TIMESTEP
             slack = wall_next - time.perf_counter()
             if slack > 0:
                 time.sleep(slack)
-
-        if renderer is not None:
-            renderer.close()
 
     # --- slots called via DirectConnection from main thread (GIL-safe) ---
 
@@ -217,6 +224,55 @@ class SimWorker(QObject):
     @Slot(float)
     def apply_disturbance(self, delta_rad: float) -> None:
         self._disturb_pending_rad += delta_rad
+
+    @Slot()
+    def stop(self) -> None:
+        self._running = False
+
+
+class RenderWorker(QObject):
+    """Offscreen 3D render at RENDER_FPS in its own QThread.
+
+    Reads a StateSnapshot published by the physics thread and renders from its own
+    MjData, so the expensive render() (which releases the GIL) runs in parallel with
+    the 1 kHz loop instead of stalling it.
+    """
+
+    frame_ready = Signal(object)   # numpy uint8 H×W×3 RGB
+
+    def __init__(self, model, snapshot: StateSnapshot) -> None:
+        super().__init__()
+        self._model    = model
+        self._snapshot = snapshot
+        self._data     = mujoco.MjData(model)
+        self._running  = False
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            renderer = mujoco.Renderer(self._model, height=RENDER_H, width=RENDER_W)
+        except Exception:
+            return
+
+        self._running = True
+        period   = 1.0 / RENDER_FPS
+        wall_next = time.perf_counter()
+        while self._running:
+            qpos, qvel = self._snapshot.read()
+            self._data.qpos[:] = qpos
+            self._data.qvel[:] = qvel
+            mujoco.mj_forward(self._model, self._data)
+            renderer.update_scene(self._data)
+            self.frame_ready.emit(renderer.render().copy())
+
+            wall_next += period
+            slack = wall_next - time.perf_counter()
+            if slack > 0:
+                time.sleep(slack)
+            else:
+                wall_next = time.perf_counter()
+
+        renderer.close()
 
     @Slot()
     def stop(self) -> None:
@@ -479,13 +535,13 @@ class MainWindow(QMainWindow):
         return panel
 
     def _start_worker(self) -> None:
+        # Physics thread: runs PendulumSim at 1 kHz, publishes state snapshots.
         self._thread = QThread(self)
         self._worker = SimWorker()
         self._worker.moveToThread(self._thread)
 
         self._thread.started.connect(self._worker.start_sim)
         self._worker.data_ready.connect(self._on_data)
-        self._worker.frame_ready.connect(self._on_frame)
         self._worker.ctrl_error.connect(self._on_ctrl_error)
 
         self._send_pwm.connect(self._worker.set_pwm,               Qt.DirectConnection)
@@ -494,7 +550,15 @@ class MainWindow(QMainWindow):
         self._send_ctrl_stop.connect(self._worker.deactivate_controller,  Qt.DirectConnection)
         self._send_disturb.connect(self._worker.apply_disturbance,         Qt.DirectConnection)
 
+        # Render thread: offscreen 3D at RENDER_FPS, decoupled from the 1 kHz loop.
+        self._render_thread = QThread(self)
+        self._render_worker = RenderWorker(self._worker._sim._model, self._worker._snapshot)
+        self._render_worker.moveToThread(self._render_thread)
+        self._render_thread.started.connect(self._render_worker.run)
+        self._render_worker.frame_ready.connect(self._on_frame)
+
         self._thread.start()
+        self._render_thread.start()
 
     @Slot(int, int, int)
     def _on_data(self, t_us: int, motor_enc: int, pend_enc: int) -> None:
@@ -661,6 +725,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._timer.stop()
+        self._render_worker.stop()
+        self._render_thread.quit()
+        self._render_thread.wait(2000)
         self._worker.stop()
         self._thread.quit()
         self._thread.wait(2000)

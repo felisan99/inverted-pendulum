@@ -302,7 +302,7 @@ del ruido por episodio.
 2. GUI sin `configs/sim_config.toml` → comportamiento actual.
 3. Copiar `sim_realistic.toml` a `sim_config.toml`, correr GUI con `pid_balance.py` y verificar
    que estabiliza desde 5 grados (test manual de robustez).
-4. Comparar `pid_balance.py` vs `pid_balance_4ms.py` bajo la misma config realista.
+4. Comparar `pid_balance.py` a distintas tasas de control (1 kHz vs 250 Hz, vía `configs/control_config.toml`) bajo la misma config realista.
 5. Sanity RL: `PendulumEnv(sim_config=SimConfig())` con seed fijo; comparar una corrida corta
    contra la implementacion previa para confirmar que las observaciones de equilibrium coinciden.
 6. Sanity sim-to-real: confirmar que `ObservationEncoder` produce el mismo vector dado el mismo

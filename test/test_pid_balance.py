@@ -8,6 +8,7 @@ from gym_envs.pendulum_sim import PendulumSim
 
 _PEND_RAD_PER_COUNT = 2 * math.pi / 4096
 _CONTROLLER_PATH = Path(__file__).resolve().parent.parent / "controllers" / "pid_balance.py"
+_CONFIGS_DIR = Path(__file__).resolve().parent.parent / "configs"
 
 
 def _pend_to_rad(pend_enc: int) -> float:
@@ -15,12 +16,15 @@ def _pend_to_rad(pend_enc: int) -> float:
     return angle - 2 * math.pi if angle > math.pi else angle
 
 
-def _load_controller_class():
+def _load_controller_class(config_path: Path | None = None):
     if not _CONTROLLER_PATH.exists():
         pytest.skip(f"{_CONTROLLER_PATH} not present (untracked controller)")
     spec = importlib.util.spec_from_file_location("pid_balance_under_test", _CONTROLLER_PATH)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    # Decouple from the repo's active control_config.toml: a non-existent path
+    # falls back to ControlConfig() defaults (1 kHz), a real path selects a rate.
+    mod._CONFIG_PATH = config_path if config_path is not None else Path("/nonexistent.toml")
     return mod.Controller
 
 
@@ -48,5 +52,14 @@ def _simulate(controller, perturb_deg: float, seconds: float):
 def test_pid_balance_stabilizes(perturb_deg):
     controller = _load_controller_class()()
     max_abs_deg, final_abs_deg = _simulate(controller, perturb_deg, seconds=3.0)
+    assert max_abs_deg < 15.0, f"pendulum diverged (max |phi| = {max_abs_deg:.1f} deg)"
+    assert final_abs_deg < 3.0, f"did not settle upright (final |phi| = {final_abs_deg:.1f} deg)"
+
+
+def test_pid_balance_stabilizes_at_250hz():
+    config_path = _CONFIGS_DIR / "control_250hz.toml"
+    controller = _load_controller_class(config_path)()
+    assert controller._period_us == 4000.0
+    max_abs_deg, final_abs_deg = _simulate(controller, perturb_deg=5.0, seconds=3.0)
     assert max_abs_deg < 15.0, f"pendulum diverged (max |phi| = {max_abs_deg:.1f} deg)"
     assert final_abs_deg < 3.0, f"did not settle upright (final |phi| = {final_abs_deg:.1f} deg)"

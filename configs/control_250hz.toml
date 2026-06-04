@@ -1,0 +1,4 @@
+# Reference profile: 250 Hz control (4 ms period). Copy over control_config.toml to use it.
+[control_config]
+sample_freq_hz   = 250.0    # 4 ms period; resulting alpha ~= 0.48 at a 26 Hz cutoff
+filter_cutoff_hz = 26.0
