@@ -7,7 +7,7 @@ Aplica el mismo metodo de decremento logaritmico que analisis_pendulo_libre.py.
 
 Uso con config explicita:
     python mujoco_sim/analisis_step_100_comparacion.py \
-        --config configs/step_1023_100_sim.toml \
+        --config configs/sim_to_real_validation.toml \
         --real   <ruta_al_CSV_real>
 
 Uso sin config (parametros y senal extraidos del CSV real):
@@ -53,26 +53,6 @@ _DEFAULT_CONFIG = {
     "initial_conditions": {
         "motor_position_rad": 0.0,
         "pendulum_position": "down",
-    },
-    "density": {
-        "link1_kg_m3": 500.0,
-        "pendulum_kg_m3": 500.0,
-    },
-    "friction": {
-        "joint1_damping": 0.00198,
-        "joint1_frictionloss": 0.02,
-        "encoder_damping": 2.60e-4,
-        "encoder_frictionloss": 0.0,
-    },
-    "motor": {
-        "max_voltage": 12.0,
-        "gainprm": 0.2184,
-        "biasprm": -0.2385,
-        "armature": 8.797e-3,
-        "stall_torque_nm": 2.540,
-        "resistance_ohm": 5.0,
-        "torque_constant": 1.092,
-        "back_emf_constant": 1.092,
     },
     "output": {
         "csv_path": "results/characterization/step_1023_100_sim.csv",

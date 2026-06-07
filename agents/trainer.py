@@ -1,12 +1,11 @@
 import os
 import gymnasium as gym
 from datetime import datetime
-from stable_baselines3 import PPO, SAC, DQN, A2C
+from stable_baselines3 import PPO, SAC, A2C
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import EvalCallback
 from gym_envs.pendulum_env import PendulumEnv
 from gym_envs.sim_config import SimConfig
-from utils.plotting import plot_monitor_data
 import torch
 
 class RLTrainer:
@@ -124,23 +123,6 @@ class RLTrainer:
         model.learn(total_timesteps=total_timesteps, callback=eval_callback)
         
         model.save(os.path.join(self.run_dir, "model_final"))
-        self._save_results()
-
-    def _save_results(self):
-        plot_monitor_data(
-            run_dir=self.run_dir,
-            save_dir=self.run_dir,
-            monitor_file="train_monitor.csv",
-            output_name="learning_curve_train.png",
-            is_train=True
-        )
-        plot_monitor_data(
-            run_dir=self.run_dir,
-            save_dir=self.run_dir,
-            monitor_file="val_monitor.csv",
-            output_name="learning_curve_val.png",
-            is_train=False
-        )
 
     def predict(self, model_path, episodes=5, deterministic=True, render_mode="human"):
         model = self.agents[self.agent_type].load(model_path)

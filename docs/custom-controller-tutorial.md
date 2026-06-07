@@ -75,7 +75,7 @@ This controller does not use any math library. It reads `pend_enc` directly and 
 The idea: if the pendulum is leaning to one side, push the arm in the opposite direction to bring it back.
 
 ```python
-# controllers/threshold_example.py
+# threshold_controller.py — save this anywhere on your machine
 
 _DEAD_ZONE    = 50    # counts around upright where we do nothing (~4.4 deg)
 _STRONG_PWM   = 600   # PWM applied when far from upright

@@ -29,7 +29,7 @@ python scripts/random_episode_test.py --xml mujoco_sim/xml_models/pendulum_model
 
 **Run system characterization (fits model params against real bench data):**
 ```bash
-python -m mujoco_sim.characterize_system --config configs/step_1023_100_sim.toml
+python -m mujoco_sim.characterize_system --config configs/sim_to_real_validation.toml
 ```
 
 **Run tests with pytest:**
@@ -50,7 +50,7 @@ python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mu
   - **`backend.py`** - `PendulumBackend` (a `runtime_checkable` Protocol) defines the firmware contract: signed 10-bit PWM in, raw `SensorReading(t_us, motor_enc, pend_enc)` out. `SensorReading` lives here (import it from `gym_envs.backend`). A future `HardwareBackend` would satisfy the same contract.
   - **`pendulum_sim.py`** - `PendulumSim`, the MuJoCo implementation of `PendulumBackend`. Mirrors the firmware: PWM in, raw counts out, 1 kHz. Applies optional sensor non-idealities from a `SimConfig` (noise, latency, timing jitter). Single owner of the human 3D viewer. Used by the GUI, the controller tests, and `PendulumEnv`.
   - **`observation.py`** - `ObservationEncoder`, the single source of truth converting a `SensorReading` to the 6-dim observation `[sin(motor), cos(motor), vel_motor, sin(pendulum), cos(pendulum), vel_pendulum]`. Same code in training and at deployment. `_MOTOR_LSB`/`_PENDULUM_LSB` live here.
-  - **`sim_config.py`** - `SimConfig` dataclass (defaults = ideal) with `from_toml()`. Profiles in `configs/sim_ideal.toml` and `configs/sim_realistic.toml`.
+  - **`sim_config.py`** - `SimConfig` dataclass (defaults = ideal) with `from_toml()`. Profiles in `configs/sim_ideal.toml` and `configs/sim_config.toml`.
   - **`pendulum_env.py`** - `PendulumEnv(gym.Env)`, a composition adapter over a backend + encoder (NOT a subclass of `PendulumSim`). Continuous action space: voltage `[-12V, +12V]`, routed through the backend's 10-bit PWM channel. Two tasks: `"equilibrium"` and `"swing_up"`. DC motor torque via the XML `general` actuator (`gainprm=0.2184`, `biasprm=-0.2385`). Timestep 0.001 s (1 kHz).
 
 - **`agents/trainer.py`** - `RLTrainer` class wrapping Stable-Baselines3. Supports PPO, SAC, A2C. Saves results to `results/run_N/` with TensorBoard logs, monitor CSVs, and model checkpoints.
@@ -88,17 +88,14 @@ Training runs save to `results/run_N/` where N is auto-incremented. Each run con
 
 The reference experiment applies a 100 ms voltage pulse (PWM 1023, ~5 V) to the motor and records the free oscillation of the pendulum. It is the ground truth for validating that MuJoCo parameters match real hardware.
 
-- Config: `configs/step_1023_100_sim.toml`
+- Config: `configs/sim_to_real_validation.toml`
 - XML model: `mujoco_sim/xml_models/pendulum_model_v3.xml`
 - Real data: `/Users/felipe/Documents/Tesis/Informe-Final/notes/experimento-validacion-sim-real/`
 - Full documentation: `.../experimento-validacion-sim-real/README.md`
 
 **Critical parameter — do not change without re-validating:**
 
-```toml
-[friction]
-joint1_frictionloss = 0.02
-```
+`_FRICTION_DEFAULTS["joint1_frictionloss"] = 0.02` in `mujoco_sim/characterize_system.py`.
 
 This value is intentional. It proxies the mechanical resistance of the gearbox reduction that keeps the arm stationary during the pendulum's free oscillation. Without it, the arm drifts slightly and adds spurious damping, which overestimates ζ.
 

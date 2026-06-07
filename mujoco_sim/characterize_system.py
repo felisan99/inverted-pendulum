@@ -38,10 +38,28 @@ def _set_general_actuator_param(root: ET.Element, actuator_name: str, param: str
     actuator.set(param, value)
 
 
+_FRICTION_DEFAULTS: dict = {
+    "joint1_damping": 0.00198,
+    "joint1_frictionloss": 0.02,
+    "encoder_damping": 2.60e-4,
+    "encoder_frictionloss": 0.0,
+}
+
+_MOTOR_DEFAULTS: dict = {
+    "max_voltage": 12.0,
+    "gainprm": 0.2184,
+    "biasprm": -0.2385,
+    "stall_torque_nm": 2.540,
+    "resistance_ohm": 5.0,
+    "torque_constant": 1.092,
+    "back_emf_constant": 1.092,
+}
+
+
 def build_parametrized_model(config: dict, workspace_root: Path) -> Path:
     simulation_cfg = _get_required_section(config, "simulation")
-    friction_cfg = _get_required_section(config, "friction")
-    motor_cfg = _get_required_section(config, "motor")
+    friction_cfg = {**_FRICTION_DEFAULTS, **config.get("friction", {})}
+    motor_cfg = {**_MOTOR_DEFAULTS, **config.get("motor", {})}
 
     xml_model_relative = simulation_cfg.get("xml_model", "mujoco_sim/xml_models/pendulum_model_v3.xml")
     xml_model_path = (workspace_root / xml_model_relative).resolve()
@@ -125,7 +143,7 @@ def estimate_motor_current(voltage: float, joint_velocity: float, motor_cfg: dic
 
 def run_characterization(config: dict, workspace_root: Path) -> tuple[list[dict], list]:
     simulation_cfg = _get_required_section(config, "simulation")
-    motor_cfg = _get_required_section(config, "motor")
+    motor_cfg = {**_MOTOR_DEFAULTS, **config.get("motor", {})}
     input_cfg = _get_required_section(config, "input")
     output_cfg = _get_required_section(config, "output")
 

@@ -82,9 +82,9 @@ so `SimConfig()` is the noise-free sim. Fields: `pend_noise_sigma`,
 (microseconds, per interval). `SimConfig.from_toml(path)` reads a `[sim_config]`
 TOML section.
 
-Profiles live in `configs/`: `sim_ideal.toml`, `sim_realistic.toml`. The GUI loads
-`configs/sim_config.toml` by convention if it exists (this file is the local active
-profile; the two named files are versioned references).
+Profiles live in `configs/`: `sim_ideal.toml` (versioned reference, all zeros). The
+GUI loads `configs/sim_config.toml` by convention if it exists (local active profile,
+edit freely).
 
 ## The control-loop config: `control_config.py`
 

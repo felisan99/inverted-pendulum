@@ -1,0 +1,29 @@
+# STEP_1023_100 sim-to-real validation experiment.
+# Ground truth for matching MuJoCo parameters against real bench data: a 100 ms
+# voltage pulse applied to the motor, recording the pendulum's free oscillation.
+# Validated results (omega_n ~6.255 rad/s, zeta ~0.01152) come from this config.
+# See the root CLAUDE.md "Sim-to-Real Validation: STEP_1023_100" section.
+#
+# Physical constants (motor, friction) are hardcoded in characterize_system.py.
+# Only run-level parameters live here.
+
+[simulation]
+xml_model    = "mujoco_sim/xml_models/pendulum_model_v3.xml"
+timestep_sec = 0.001
+duration_sec = 12.0
+
+[initial_conditions]
+motor_position_rad = 0.0
+pendulum_position  = "down"
+
+[input]
+type              = "step"
+amplitude_voltage = 12.0   # PWM 1023 full-scale, mapped to 12 V commanded
+start_time_sec    = 0.0
+duration_sec      = 0.1    # 100 ms pulse
+
+[output]
+csv_path   = "characterization/step_1023_100_sim.csv"
+plot_path  = "characterization/step_1023_100_sim.png"
+show_plot  = false
+save_video = false

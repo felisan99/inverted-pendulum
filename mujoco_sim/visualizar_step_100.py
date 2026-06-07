@@ -34,14 +34,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--speed", type=float, default=3.0,
                         help="Factor de velocidad respecto al tiempo real (default: 3.0)")
-    parser.add_argument("--config", default="configs/step_1023_100_sim.toml")
+    parser.add_argument("--config", default="configs/sim_to_real_validation.toml")
     args = parser.parse_args()
 
     config_path = ROOT / args.config
     config = load_config(config_path)
 
     sim_cfg   = config["simulation"]
-    motor_cfg = config["motor"]
     input_cfg = config["input"]
 
     model_path = build_parametrized_model(config, ROOT)
@@ -55,7 +54,7 @@ def main():
         model.opt.timestep = float(sim_cfg["timestep_sec"])
 
     duration    = float(sim_cfg["duration_sec"])
-    max_voltage = float(motor_cfg["max_voltage"])
+    max_voltage = float(config.get("motor", {}).get("max_voltage", 12.0))
     speed       = args.speed
 
     step_end = float(input_cfg.get("start_time_sec", 0.0)) + float(input_cfg["duration_sec"])

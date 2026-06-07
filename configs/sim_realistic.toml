@@ -1,6 +1,0 @@
-# Estimated hardware non-idealities for sim-to-real robustness testing.
-[sim_config]
-pend_noise_sigma     = 1.5    # counts — AS5600 magnetic jitter
-motor_noise_sigma    = 0.0    # counts — Hall quadrature is essentially exact
-sensor_latency_steps = 1      # 1 step @ 1 kHz = ~1 ms I2C latency
-dt_jitter_sigma      = 200.0  # us — per-interval FreeRTOS timing jitter

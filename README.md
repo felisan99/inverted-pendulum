@@ -107,27 +107,20 @@ to its ideal value (zero effect), so the default is the original noise-free simu
 | `dt_jitter_sigma` | microseconds | Per-interval FreeRTOS timing jitter |
 
 Two reference profiles ship in `configs/`: `sim_ideal.toml` (all zeros) and
-`sim_realistic.toml` (estimated hardware values). Use a profile from code:
+`sim_config.toml` (estimated hardware non-idealities — the active profile). Use a
+profile from code:
 
 ```python
 from gym_envs.sim_config import SimConfig
 from gym_envs.pendulum_env import PendulumEnv
 
-cfg = SimConfig.from_toml("configs/sim_realistic.toml")
+cfg = SimConfig.from_toml("configs/sim_config.toml")
 env = PendulumEnv(task="equilibrium", sim_config=cfg, seed=0)   # noise is reproducible per seed
 ```
 
 `PendulumSim`, `PendulumEnv`, and `RLTrainer` all accept a `sim_config=` argument.
 The GUI monitor loads `configs/sim_config.toml` by convention at startup if that file
-exists (it is the local active profile; the two named files above are versioned
-references). To run the GUI with realistic noise, copy a profile into place:
-
-```bash
-cp configs/sim_realistic.toml configs/sim_config.toml
-python scripts/gui_monitor.py
-```
-
-Delete or rename `configs/sim_config.toml` to return to the ideal sim.
+exists. Delete or rename it to return to the ideal (noise-free) sim.
 
 ---
 
@@ -192,7 +185,7 @@ You have a CSV file from a real experiment and want to compare it against the si
 
 ```bash
 python mujoco_sim/analisis_step_100_comparacion.py \
-    --config configs/step_1023_100_sim.toml \
+    --config configs/sim_to_real_validation.toml \
     --real <path_to_csv>
 ```
 
@@ -237,7 +230,7 @@ trainer = RLTrainer(
     agent_type="PPO",
     task="equilibrium",
     seed=42,
-    sim_config=SimConfig.from_toml("configs/sim_realistic.toml"),
+    sim_config=SimConfig.from_toml("configs/sim_config.toml"),
 )
 ```
 
@@ -280,7 +273,7 @@ A MuJoCo viewer opens and runs the specified number of episodes. Episode rewards
 Runs any TOML config through the full simulation pipeline and saves CSV and plot.
 
 ```bash
-python -m mujoco_sim.characterize_system --config configs/step_1023_100_sim.toml
+python -m mujoco_sim.characterize_system --config configs/sim_to_real_validation.toml
 ```
 
 Output paths are defined in the `[output]` section of the TOML.
@@ -307,8 +300,8 @@ Output paths are defined in the `[output]` section of the TOML.
 |---|---|
 | Interactive GUI monitor | `python scripts/gui_monitor.py` |
 | Watch simulation | `python mujoco_sim/visualizar_step_100.py --speed 3.0` |
-| Sim-to-real comparison | `python mujoco_sim/analisis_step_100_comparacion.py --config configs/step_1023_100_sim.toml --real <csv>` |
-| Raw simulation (headless) | `python -m mujoco_sim.characterize_system --config configs/step_1023_100_sim.toml` |
+| Sim-to-real comparison | `python mujoco_sim/analisis_step_100_comparacion.py --config configs/sim_to_real_validation.toml --real <csv>` |
+| Raw simulation (headless) | `python -m mujoco_sim.characterize_system --config configs/sim_to_real_validation.toml` |
 | Train agent | `python -m agents.trainer` |
 | Run trained model | `python -m agents.predict --model-path results/run_N/best_model.zip --agent PPO --task equilibrium --xml-file mujoco_sim/xml_models/pendulum_model_v3.xml` |
 | TensorBoard | `tensorboard --logdir results/` |
@@ -328,8 +321,8 @@ Output paths are defined in the `[output]` section of the TOML.
 ## Repository structure
 
 ```
-configs/          TOML configs: characterize_system.py + sim_ideal/sim_realistic (SimConfig profiles)
-controllers/      Example controller scripts (pid_example.py, threshold_example.py)
+configs/          TOML configs: sim_to_real_validation.toml (characterization) + sim_ideal/sim_config (SimConfig profiles)
+controllers/      Controller scripts (pid_example.py example, pid_balance.py LQR balance)
 docs/             Guides and tutorials
 gym_envs/         Backend, observation encoder, and RL environment (see gym_envs/CLAUDE.md)
   backend.py      PendulumBackend Protocol + SensorReading (the firmware contract)
