@@ -24,12 +24,12 @@ uv sync --group dev
 
 **Run a random episode to validate the environment:**
 ```bash
-python scripts/random_episode_test.py --xml mujoco_sim/xml_models/pendulum_model_v3.xml
+python scripts/random_episode_test.py --xml models/pendulum_model_v3.xml
 ```
 
 **Run system characterization (fits model params against real bench data):**
 ```bash
-python -m mujoco_sim.characterize_system --config configs/sim_to_real_validation.toml
+python tools/characterize_system.py --config configs/sim_to_real_validation.toml
 ```
 
 **Run tests with pytest:**
@@ -39,7 +39,7 @@ pytest test/
 
 **Run a trained model:**
 ```bash
-python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mujoco_sim/xml_models/pendulum_model_v3.xml --agent PPO --task equilibrium
+python -m agents.predict --model-path results/run_N/best_model.zip --xml-file models/pendulum_model_v3.xml --agent PPO --task equilibrium
 ```
 
 ## Architecture
@@ -57,19 +57,23 @@ python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mu
 
 - **`agents/predict.py`** - CLI entrypoint for loading and running a saved model.
 
-- **`mujoco_sim/characterize_system.py`** - Standalone simulation tool for parameter identification. Reads a TOML config, patches the XML model in memory, runs a parameterized simulation, and outputs CSV/plots/video. Does not use the Gymnasium env.
+- **`tools/characterize_system.py`** - Standalone simulation tool for parameter identification. Reads a TOML config, patches the XML model in memory, runs a parameterized simulation, and outputs CSV/plots/video. Does not use the Gymnasium env.
 
-- **`mujoco_sim/analisis_step_100_comparacion.py`** - Compares a real hardware step-response CSV against the MuJoCo simulation. Extracts ωn and ζ via log-decrement from both signals and prints an error table. `--config` is optional: without it, physical parameters are taken from validated defaults and the step signal is extracted automatically from the CSV's PWM column. `--output <path>` saves the plot to a custom path; `--output` (no value) skips the plot entirely.
+- **`tools/compare_step_response.py`** - Compares a real hardware step-response CSV against the MuJoCo simulation. Extracts ωn and ζ via log-decrement from both signals and prints an error table. `--config` is optional: without it, physical parameters are taken from validated defaults and the step signal is extracted automatically from the CSV's PWM column. `--output <path>` saves the plot to a custom path; `--output` (no value) skips the plot entirely.
 
-- **`mujoco_sim/visualizar_step_100.py`** - Interactive 3D visualizer for the STEP_1023_100 experiment. Opens a MuJoCo viewer window and shows the comparison plot when done. Use `--speed` to control playback rate (default 3.0×). Requires a display; on macOS use `mujoco_viewer.MujocoViewer` — do not use `mujoco.viewer.launch_passive` without `mjpython`.
+- **`tools/visualize_step_response.py`** - Interactive 3D visualizer for the STEP_1023_100 experiment. Opens a MuJoCo viewer window and shows the comparison plot when done. Use `--speed` to control playback rate (default 3.0×). Requires a display; on macOS use `mujoco_viewer.MujocoViewer` — do not use `mujoco.viewer.launch_passive` without `mjpython`.
 
-- **`scripts/`** - Manual validation scripts (`random_episode_test.py`, `max_voltage_test.py`). Run interactively with `--xml mujoco_sim/xml_models/pendulum_model_v3.xml`; require a display (not headless).
+- **`scripts/`** - Manual validation scripts (`random_episode_test.py`, `max_voltage_test.py`). Run interactively with `--xml models/pendulum_model_v3.xml`; require a display (not headless).
 
-- **`mujoco_sim/xml_models/`** - MuJoCo XML model files. `pendulum_model_v3.xml` is the only model — validated against real hardware (sim-to-real error: ωn 0.09%, ζ 1.07%).
+- **`models/`** - MuJoCo XML model files. `pendulum_model_v3.xml` is the only model — validated against real hardware (sim-to-real error: ωn 0.09%, ζ 1.07%).
 
 - **`configs/`** - TOML configuration files for `characterize_system.py`. Each file defines physical parameters, initial conditions, input signal, and output paths.
 
-- **`scripts/gui_monitor.py`** - Real-time desktop GUI (PySide6 + PyQtGraph). Runs `PendulumSim` at 1 kHz in a `QThread` and shows live plots of both joints plus an offscreen 3D render (`mujoco.Renderer`). Three-column layout: controls (left), expanding 3D view (center), stacked plots (right). Control panel: set PWM/voltage (Apply), hold-to-move jog buttons, a Disturbance ("hit") group, and Reset. Supports loading external controller scripts and trained SB3 models (see `docs/custom-controller-tutorial.md`). Run with `python scripts/gui_monitor.py`; requires a display.
+- **`gui/`** - Real-time desktop GUI package (PySide6 + PyQtGraph). Run with `python -m gui`; requires a display. Split into:
+  - **`ring_buffer.py`** - `RingBuffer`: pre-allocated circular buffer for plot time-series.
+  - **`workers.py`** - `StateSnapshot`, `SimWorker` (1 kHz physics QThread), `RenderWorker` (30 Hz offscreen render QThread).
+  - **`main_window.py`** - `MainWindow`: three-column layout (controls, 3D view, plots), controller/model loading UI, disturbance panel.
+  - **`__main__.py`** - Entry point.
 
 
 ### Observation Design
@@ -89,26 +93,26 @@ Training runs save to `results/run_N/` where N is auto-incremented. Each run con
 The reference experiment applies a 100 ms voltage pulse (PWM 1023, ~5 V) to the motor and records the free oscillation of the pendulum. It is the ground truth for validating that MuJoCo parameters match real hardware.
 
 - Config: `configs/sim_to_real_validation.toml`
-- XML model: `mujoco_sim/xml_models/pendulum_model_v3.xml`
+- XML model: `models/pendulum_model_v3.xml`
 - Real data: `/Users/felipe/Documents/Tesis/Informe-Final/notes/experimento-validacion-sim-real/`
 - Full documentation: `.../experimento-validacion-sim-real/README.md`
 
 **Critical parameter — do not change without re-validating:**
 
-`_FRICTION_DEFAULTS["joint1_frictionloss"] = 0.02` in `mujoco_sim/characterize_system.py`.
+`_FRICTION_DEFAULTS["joint1_frictionloss"] = 0.02` in `tools/characterize_system.py`.
 
 This value is intentional. It proxies the mechanical resistance of the gearbox reduction that keeps the arm stationary during the pendulum's free oscillation. Without it, the arm drifts slightly and adds spurious damping, which overestimates ζ.
 
 **Run the interactive visualizer:**
 
 ```bash
-python mujoco_sim/visualizar_step_100.py --speed 3.0
+python tools/visualize_step_response.py --speed 3.0
 ```
 
 **Run the sim-vs-real comparison:**
 
 ```bash
-python mujoco_sim/analisis_step_100_comparacion.py --real <ruta_al_CSV_real>
+python tools/compare_step_response.py --real <ruta_al_CSV_real>
 ```
 
 **Validated results (June 2025):**
@@ -123,7 +127,7 @@ Rm updated to 5.0 Ω (midpoint between 4.808 Ω measured at 5V and 5.5 Ω measur
 
 ## GUI Monitor architecture
 
-`scripts/gui_monitor.py` uses a threading model designed around the 1 kHz simulation loop.
+The `gui/` package uses a threading model designed around the 1 kHz simulation loop.
 
 **Threading (three participants)**
 - `SimWorker` (QObject moved to a `QThread`): runs `PendulumSim.step()` in a tight loop at 1 kHz, real-time throttled with `time.sleep`. Every 10 steps (100 Hz) it emits `data_ready` and calls `StateSnapshot.publish(qpos, qvel)`. It does NOT render.

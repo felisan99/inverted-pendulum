@@ -11,7 +11,7 @@ source .venv/bin/activate
 
 ## Sim-to-real validation
 
-The model `mujoco_sim/xml_models/pendulum_model_v3.xml` is the only model in the repository. All parameters come from empirical measurements on the physical system.
+The model `models/pendulum_model_v3.xml` is the only model in the repository. All parameters come from empirical measurements on the physical system.
 
 ### Physical parameters — arm (link1)
 
@@ -141,7 +141,7 @@ All commands are run from the repository root.
 The fastest way to see something working. Runs the validated STEP_1023_100 experiment in a 3D viewer at 3x real time, then opens the comparison plot.
 
 ```bash
-python mujoco_sim/visualizar_step_100.py --speed 3.0
+python tools/visualize_step_response.py --speed 3.0
 ```
 
 - Close the 3D window to end the simulation early.
@@ -155,7 +155,7 @@ python mujoco_sim/visualizar_step_100.py --speed 3.0
 Real-time desktop interface for manual testing and controller development. Runs the simulation at 1 kHz, shows live plots of both joints, an embedded 3D view, and lets you send PWM or voltage commands interactively.
 
 ```bash
-python scripts/gui_monitor.py
+python -m gui
 ```
 
 The window has two panels:
@@ -184,14 +184,14 @@ Requires a display. No CLI arguments.
 You have a CSV file from a real experiment and want to compare it against the simulation.
 
 ```bash
-python mujoco_sim/analisis_step_100_comparacion.py \
+python tools/compare_step_response.py \
     --config configs/sim_to_real_validation.toml \
     --real <path_to_csv>
 ```
 
 The CSV must have columns `t_us, motor_enc, pend_enc, pwm` logged at 1 kHz (standard firmware output). The script extracts the step duration and amplitude from the `pwm` column automatically.
 
-Output image: `results/characterization/step_1023_100_comparacion.png`
+Output image: `data/step_1023_100_comparacion.png`
 
 The plot shows three panels: arm position, pendulum free oscillation with envelopes, and a table with wn and zeta for real vs. sim.
 
@@ -258,7 +258,7 @@ tensorboard --logdir results/
 ```bash
 python -m agents.predict \
     --model-path results/run_N/best_model.zip \
-    --xml-file mujoco_sim/xml_models/pendulum_model_v3.xml \
+    --xml-file models/pendulum_model_v3.xml \
     --agent PPO \
     --task equilibrium \
     --episodes 3
@@ -273,7 +273,7 @@ A MuJoCo viewer opens and runs the specified number of episodes. Episode rewards
 Runs any TOML config through the full simulation pipeline and saves CSV and plot.
 
 ```bash
-python -m mujoco_sim.characterize_system --config configs/sim_to_real_validation.toml
+python tools/characterize_system.py --config configs/sim_to_real_validation.toml
 ```
 
 Output paths are defined in the `[output]` section of the TOML.
@@ -298,15 +298,15 @@ Output paths are defined in the `[output]` section of the TOML.
 
 | Task | Command |
 |---|---|
-| Interactive GUI monitor | `python scripts/gui_monitor.py` |
-| Watch simulation | `python mujoco_sim/visualizar_step_100.py --speed 3.0` |
-| Sim-to-real comparison | `python mujoco_sim/analisis_step_100_comparacion.py --config configs/sim_to_real_validation.toml --real <csv>` |
-| Raw simulation (headless) | `python -m mujoco_sim.characterize_system --config configs/sim_to_real_validation.toml` |
+| Interactive GUI monitor | `python -m gui` |
+| Watch simulation | `python tools/visualize_step_response.py --speed 3.0` |
+| Sim-to-real comparison | `python tools/compare_step_response.py --config configs/sim_to_real_validation.toml --real <csv>` |
+| Raw simulation (headless) | `python tools/characterize_system.py --config configs/sim_to_real_validation.toml` |
 | Train agent | `python -m agents.trainer` |
-| Run trained model | `python -m agents.predict --model-path results/run_N/best_model.zip --agent PPO --task equilibrium --xml-file mujoco_sim/xml_models/pendulum_model_v3.xml` |
+| Run trained model | `python -m agents.predict --model-path results/run_N/best_model.zip --agent PPO --task equilibrium --xml-file models/pendulum_model_v3.xml` |
 | TensorBoard | `tensorboard --logdir results/` |
-| Validate environment (random) | `python scripts/random_episode_test.py --xml mujoco_sim/xml_models/pendulum_model_v3.xml` |
-| Validate environment (12 V) | `python scripts/max_voltage_test.py --xml mujoco_sim/xml_models/pendulum_model_v3.xml` |
+| Validate environment (random) | `python scripts/random_episode_test.py --xml models/pendulum_model_v3.xml` |
+| Validate environment (12 V) | `python scripts/max_voltage_test.py --xml models/pendulum_model_v3.xml` |
 
 ---
 
@@ -323,7 +323,12 @@ Output paths are defined in the `[output]` section of the TOML.
 ```
 configs/          TOML configs: sim_to_real_validation.toml (characterization) + sim_ideal/sim_config (SimConfig profiles)
 controllers/      Controller scripts (pid_example.py example, pid_balance.py LQR balance)
+data/             Experiment output data (STEP_1023_100 CSVs, plots, videos)
 docs/             Guides and tutorials
+gui/              Real-time desktop GUI package (python -m gui)
+  ring_buffer.py  RingBuffer: pre-allocated circular buffer for plot data
+  workers.py      StateSnapshot, SimWorker (1 kHz), RenderWorker (30 Hz offscreen)
+  main_window.py  MainWindow: Qt UI, control panel, plot refresh
 gym_envs/         Backend, observation encoder, and RL environment (see gym_envs/CLAUDE.md)
   backend.py      PendulumBackend Protocol + SensorReading (the firmware contract)
   pendulum_sim.py PendulumSim: MuJoCo backend with optional sensor non-idealities
@@ -331,11 +336,13 @@ gym_envs/         Backend, observation encoder, and RL environment (see gym_envs
   sim_config.py   SimConfig dataclass (hardware non-idealities)
   pendulum_env.py PendulumEnv: gym.Env composition adapter
 agents/           RL training (RLTrainer) and inference (predict.py)
-mujoco_sim/       Simulation scripts and XML model
-  xml_models/     pendulum_model_v3.xml — the only model
-scripts/          gui_monitor.py (interactive GUI), random_episode_test.py, max_voltage_test.py
-utils/            Learning curve plots
-results/          Training runs (run_N/) and characterization outputs
+models/           pendulum_model_v3.xml — the only MuJoCo model
+tools/            Characterization and analysis scripts
+  characterize_system.py     Parameter ID: TOML config → CSV/plot/video
+  compare_step_response.py   Sim-vs-real comparison with log-decrement analysis
+  visualize_step_response.py Interactive 3D viewer for STEP_1023_100
+scripts/          Headless validation scripts (random_episode_test.py, max_voltage_test.py, validate_controller.py)
+results/          Training runs (run_N/)
 ```
 
 Empirical test data lives outside this repository at `/Users/felipe/Documents/Tesis/Informe-Final/notes/`.

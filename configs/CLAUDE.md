@@ -6,7 +6,7 @@ This directory holds three distinct config types. Do not mix their schemas.
 
 Files like `sim_to_real_validation.toml`. Sections: `[simulation]`,
 `[initial_conditions]`, `[input]`, `[output]`. Loaded by
-`mujoco_sim/characterize_system.py` (and the comparison / visualizer scripts) via
+`tools/characterize_system.py` (and the comparison / visualizer scripts) via
 `tomllib` into a plain dict. They patch the XML model in memory and run a
 parameterized open-loop simulation. They do NOT touch the RL env.
 
@@ -15,7 +15,7 @@ Physical constants (motor parameters, joint friction/damping) are hardcoded in
 `[motor]` or `[friction]` section to a config only to override a specific value.
 
 `sim_to_real_validation.toml` is the sim-to-real ground truth. The critical
-`joint1_frictionloss = 0.02` lives in `_FRICTION_DEFAULTS`; see the root `CLAUDE.md`.
+`joint1_frictionloss = 0.02` lives in `_FRICTION_DEFAULTS` in `tools/characterize_system.py`; see the root `CLAUDE.md`.
 
 ## 2. SimConfig profiles (for `gym_envs/sim_config.py`)
 

@@ -61,7 +61,7 @@ def build_parametrized_model(config: dict, workspace_root: Path) -> Path:
     friction_cfg = {**_FRICTION_DEFAULTS, **config.get("friction", {})}
     motor_cfg = {**_MOTOR_DEFAULTS, **config.get("motor", {})}
 
-    xml_model_relative = simulation_cfg.get("xml_model", "mujoco_sim/xml_models/pendulum_model_v3.xml")
+    xml_model_relative = simulation_cfg.get("xml_model", "models/pendulum_model_v3.xml")
     xml_model_path = (workspace_root / xml_model_relative).resolve()
     if not xml_model_path.exists():
         raise FileNotFoundError(f"Model file not found: {xml_model_path}")
@@ -319,7 +319,7 @@ def main() -> None:
     show_plot = bool(output_cfg.get("show_plot", False))
     save_video_output = bool(output_cfg.get("save_video", False))
     video_fps = float(output_cfg.get("video_fps", 60.0))
-    video_path_value = output_cfg.get("video_path", "results/characterization/step_12v_0p5s.mp4")
+    video_path_value = output_cfg.get("video_path", "data/step_12v_0p5s.mp4")
     video_path = Path(video_path_value)
 
     if not csv_path.is_absolute():

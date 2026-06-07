@@ -1,6 +1,6 @@
 import os
+from pathlib import Path
 import gymnasium as gym
-from datetime import datetime
 from stable_baselines3 import PPO, SAC, A2C
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import EvalCallback
@@ -21,7 +21,7 @@ class RLTrainer:
         self.task = task
         self.sim_config = sim_config
 
-        self.base_dir = "results"
+        self.base_dir = str(Path(__file__).resolve().parent.parent / "results")
         self.run_dir = self._create_run_dir() if create_run_dir else None
         
         self.agents = {

@@ -56,7 +56,7 @@ def run_max_voltage_test(xml=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Prueba de máximo voltaje para el péndulo")
-    parser.add_argument("--xml", type=str, default="mujoco_sim/xml_models/pendulum_model_v3.xml", help="Ruta al archivo XML del modelo")
+    parser.add_argument("--xml", type=str, default="models/pendulum_model_v3.xml", help="Ruta al archivo XML del modelo")
     args = parser.parse_args()
 
     run_max_voltage_test(xml=args.xml)

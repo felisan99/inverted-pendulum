@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """
-analisis_step_100_comparacion.py
+compare_step_response.py
 
 Replica el experimento STEP_1023_100 en MuJoCo y compara con los datos reales.
 Aplica el mismo metodo de decremento logaritmico que analisis_pendulo_libre.py.
 
 Uso con config explicita:
-    python mujoco_sim/analisis_step_100_comparacion.py \
+    python tools/compare_step_response.py \
         --config configs/sim_to_real_validation.toml \
         --real   <ruta_al_CSV_real>
 
 Uso sin config (parametros y senal extraidos del CSV real):
-    python mujoco_sim/analisis_step_100_comparacion.py \
+    python tools/compare_step_response.py \
         --real <ruta_al_CSV_real>
 
 Opciones de salida:
     --output <ruta.png>   Guarda la grafica en la ruta indicada.
     --output              Omite la generacion de la grafica (modo headless).
-    (sin --output)        Guarda en results/characterization/step_1023_100_comparacion.png
+    (sin --output)        Guarda en data/step_1023_100_comparacion.png
 """
 
 import argparse
@@ -33,12 +33,12 @@ from scipy.optimize import curve_fit
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from mujoco_sim.characterize_system import load_config, run_characterization
+from gym_envs.observation import PENDULUM_LSB
+from gym_envs.pendulum_sim import MAX_VOLTAGE, PWM_MAX
+from tools.characterize_system import load_config, run_characterization
 
 
-AS5600_COUNTS  = 4096
-MOTOR_COUNTS   = 1716
-FS_REAL        = 1000.0  # Hz — tasa de muestreo del firmware
+FS_REAL = 1000.0
 
 GAMMA = 1.8252e-3
 DELTA = 7.168e-2
@@ -46,7 +46,7 @@ OMEGA_N_MODELO = math.sqrt(DELTA / GAMMA)
 
 _DEFAULT_CONFIG = {
     "simulation": {
-        "xml_model": "mujoco_sim/xml_models/pendulum_model_v3.xml",
+        "xml_model": "models/pendulum_model_v3.xml",
         "timestep_sec": 0.001,
         "duration_sec": 12.0,
     },
@@ -55,8 +55,8 @@ _DEFAULT_CONFIG = {
         "pendulum_position": "down",
     },
     "output": {
-        "csv_path": "results/characterization/step_1023_100_sim.csv",
-        "plot_path": "results/characterization/step_1023_100_sim.png",
+        "csv_path": "data/step_1023_100_sim.csv",
+        "plot_path": "data/step_1023_100_sim.png",
         "show_plot": False,
         "save_video": False,
     },
@@ -67,7 +67,7 @@ def extract_step_params_from_csv(pwm, t):
     step_on = np.where(pwm > 0)[0]
     if len(step_on) == 0:
         raise ValueError("No se encontro senal de step en la columna PWM del CSV.")
-    amplitude_voltage = float(np.max(pwm)) * 12.0 / 1023
+    amplitude_voltage = float(np.max(pwm)) * MAX_VOLTAGE / PWM_MAX
     start_time_sec = float(t[step_on[0]])
     duration_sec = float(t[step_on[-1]]) - start_time_sec
     return amplitude_voltage, start_time_sec, duration_sec
@@ -88,7 +88,7 @@ def load_real_csv(csv_path: Path):
     t       = data[:, 0] / 1e6
     pend_enc = data[:, 2]
     pwm      = data[:, 3]
-    phi = pend_enc * (2 * math.pi / AS5600_COUNTS)
+    phi = pend_enc * PENDULUM_LSB
     phi = phi - phi[0]
     return t, phi, pwm
 
@@ -198,7 +198,6 @@ def plot_comparison(t_real, phi_real, pwm_real, t_step_end_real,
         fontsize=10
     )
 
-    # Panel 1: senal completa
     ax = axes[0]
     step_on = np.where(pwm_real > 0)[0]
     ax.plot(t_real, np.rad2deg(phi_real), color='darkorange', lw=0.8, label='Real (AS5600)', zorder=2)
@@ -212,12 +211,10 @@ def plot_comparison(t_real, phi_real, pwm_real, t_step_end_real,
     ax.grid(True, alpha=0.3)
     ax.set_title('Posicion del pendulo — senal completa', fontsize=9)
 
-    # Panel 2: oscilacion libre con picos y envolvente
     ax = axes[1]
     r = real_res
     s = sim_res
 
-    # Tiempos relativos al fin del escalon (t=0 = momento en que cae el PWM)
     tr = r["t_free"] - r["t_free"][0]
     ts = s["t_free"] - s["t_free"][0]
 
@@ -250,7 +247,6 @@ def plot_comparison(t_real, phi_real, pwm_real, t_step_end_real,
     ax.grid(True, alpha=0.3)
     ax.set_title('Oscilacion libre post-escalon (tiempo desde fin del escalon)', fontsize=9)
 
-    # Panel 3: decaimiento log en escala logaritmica
     ax = axes[2]
     ax.semilogy(r["peak_t"] - r["peak_t"][0], r["peak_amp"],
                 'rs', ms=6, label=f'Real: $\\omega_n$={r["omega_n"]:.4f}, $\\zeta$={r["zeta"]:.4f}')
@@ -290,7 +286,7 @@ def main():
     parser.add_argument("--output", nargs="?", const="", default=None,
                         help="Ruta donde guardar la grafica. "
                              "Sin valor: omite la grafica. "
-                             "Sin --output: guarda en results/characterization/.")
+                             "Sin --output: guarda en data/.")
     args = parser.parse_args()
 
     real_csv = Path(args.real).resolve()
@@ -344,7 +340,7 @@ def main():
     print_comparison(real_res, sim_res)
 
     if args.output is None:
-        out_path = ROOT / "results" / "characterization" / "step_1023_100_comparacion.png"
+        out_path = ROOT / "data" / "step_1023_100_comparacion.png"
     elif args.output == "":
         out_path = None
     else:

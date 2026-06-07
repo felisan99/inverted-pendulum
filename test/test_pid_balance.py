@@ -4,16 +4,11 @@ from pathlib import Path
 
 import pytest
 
+from gym_envs.observation import pend_to_rad
 from gym_envs.pendulum_sim import PendulumSim
 
-_PEND_RAD_PER_COUNT = 2 * math.pi / 4096
 _CONTROLLER_PATH = Path(__file__).resolve().parent.parent / "controllers" / "pid_balance.py"
 _CONFIGS_DIR = Path(__file__).resolve().parent.parent / "configs"
-
-
-def _pend_to_rad(pend_enc: int) -> float:
-    angle = pend_enc * _PEND_RAD_PER_COUNT
-    return angle - 2 * math.pi if angle > math.pi else angle
 
 
 def _load_controller_class(config_path: Path | None = None):
@@ -29,7 +24,7 @@ def _load_controller_class(config_path: Path | None = None):
 
 
 def _simulate(controller, perturb_deg: float, seconds: float):
-    """Run the controller against PendulumSim, mirroring gui_monitor's loop."""
+    """Run the controller against PendulumSim, mirroring the GUI's loop."""
     sim = PendulumSim()
     try:
         reading = sim.reset(initial_angle_rad=math.radians(perturb_deg))
@@ -39,7 +34,7 @@ def _simulate(controller, perturb_deg: float, seconds: float):
         for _ in range(int(seconds * 1000)):
             pwm = int(controller.compute(reading.pend_enc, reading.motor_enc, reading.t_us))
             reading = sim.step(pwm)
-            abs_deg = abs(math.degrees(_pend_to_rad(reading.pend_enc)))
+            abs_deg = abs(math.degrees(pend_to_rad(reading.pend_enc)))
             max_abs_deg = max(max_abs_deg, abs_deg)
             if reading.t_us * 1e-6 >= seconds - 1.0:
                 tail.append(abs_deg)

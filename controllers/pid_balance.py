@@ -50,19 +50,11 @@ import math
 from pathlib import Path
 
 from gym_envs.control_config import ControlConfig
+from gym_envs.observation import PENDULUM_LSB, MOTOR_LSB, pend_to_rad
+from gym_envs.pendulum_sim import PWM_MAX
 
-_PEND_RAD_PER_COUNT = 2.0 * math.pi / 4096
-_ARM_RAD_PER_COUNT  = 2.0 * math.pi / 1716
-_PWM_MAX            = 1023
-_DIVERGENCE_RAD     = math.radians(25.0)
-_CONFIG_PATH        = Path(__file__).resolve().parent.parent / "configs" / "control_config.toml"
-
-
-def _pend_to_rad(pend_enc: int) -> float:
-    angle = pend_enc * _PEND_RAD_PER_COUNT
-    if angle > math.pi:
-        angle -= 2.0 * math.pi
-    return angle
+_DIVERGENCE_RAD = math.radians(25.0)
+_CONFIG_PATH    = Path(__file__).resolve().parent.parent / "configs" / "control_config.toml"
 
 
 class Controller:
@@ -89,7 +81,7 @@ class Controller:
         self._last_pwm:       int          = 0
 
     def compute(self, pend_enc: int, motor_enc: int, t_us: int) -> int:
-        phi = _pend_to_rad(pend_enc)
+        phi = pend_to_rad(pend_enc)
 
         if abs(phi) > _DIVERGENCE_RAD:
             self.reset()
@@ -107,7 +99,7 @@ class Controller:
 
         dt = max((t_us - self._last_compute_t) * 1e-6, 1e-6)
 
-        theta_arm = motor_enc * _ARM_RAD_PER_COUNT
+        theta_arm = motor_enc * MOTOR_LSB
 
         assert self._prev_phi is not None
         assert self._prev_motor_enc is not None
@@ -118,7 +110,7 @@ class Controller:
                             + (1.0 - self.alpha) * self._phi_d_filt)
 
         # Filtered arm angular velocity
-        omega_arm_raw        = (motor_enc - self._prev_motor_enc) * _ARM_RAD_PER_COUNT / dt
+        omega_arm_raw        = (motor_enc - self._prev_motor_enc) * MOTOR_LSB / dt
         self._omega_arm_filt = (self.alpha * omega_arm_raw
                                 + (1.0 - self.alpha) * self._omega_arm_filt)
 
@@ -136,5 +128,5 @@ class Controller:
                    + self.Ka * theta_arm
                    + self.Kb * self._omega_arm_filt)
 
-        self._last_pwm = int(max(-_PWM_MAX, min(_PWM_MAX, output)))
+        self._last_pwm = int(max(-PWM_MAX, min(PWM_MAX, output)))
         return self._last_pwm

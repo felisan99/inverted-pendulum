@@ -43,10 +43,8 @@ import mujoco
 import numpy as np
 
 from gym_envs.backend import SensorReading
+from gym_envs.observation import PENDULUM_LSB, MOTOR_LSB
 from gym_envs.sim_config import SimConfig
-
-_PENDULUM_LSB = 2 * math.pi / 4096
-_MOTOR_LSB    = 2 * math.pi / 1716
 
 PWM_MAX     = 1023
 MAX_VOLTAGE = 12.0
@@ -60,7 +58,7 @@ class PendulumSim:
                  sim_config: SimConfig | None = None, seed: int | None = None) -> None:
         if xml_file is None:
             root = Path(__file__).resolve().parent.parent
-            xml_file = root / "mujoco_sim" / "xml_models" / "pendulum_model_v3.xml"
+            xml_file = root / "models" / "pendulum_model_v3.xml"
 
         xml_file = Path(xml_file).resolve()
         if not xml_file.exists():
@@ -124,8 +122,8 @@ class PendulumSim:
         cfg = self._config
         t_us = int(self._clock_us)
 
-        motor_enc = int(round(self._data.qpos[0] / _MOTOR_LSB))
-        pend_enc  = int(round(self._data.qpos[1] / _PENDULUM_LSB)) % 4096
+        motor_enc = int(round(self._data.qpos[0] / MOTOR_LSB))
+        pend_enc  = int(round(self._data.qpos[1] / PENDULUM_LSB)) % 4096
         if cfg.pend_noise_sigma > 0:
             pend_enc  = (pend_enc + int(round(self._rng.normal(0, cfg.pend_noise_sigma)))) % 4096
         if cfg.motor_noise_sigma > 0:

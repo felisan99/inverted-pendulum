@@ -1,39 +1,11 @@
-"""
-Real-time GUI monitor for the inverted pendulum simulation.
-
-Runs PendulumSim in a background thread and displays:
-  - Live plots of pendulum angle and arm position
-  - Offscreen-rendered 3D view of the MuJoCo model
-  - Control panel: PWM/voltage apply, hold-to-jog buttons, reset
-  - External controller plugin: load any Python script with a Controller class
-
-Usage:
-    python scripts/gui_monitor.py
-"""
-
 from __future__ import annotations
 
 import importlib.util
 import math
-import sys
-import threading
-import time
 from pathlib import Path
 
 import numpy as np
-import mujoco
-
-root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(root))
-
-from gym_envs.pendulum_sim import PendulumSim, PWM_MAX
-from gym_envs.sim_config import SimConfig
-from gym_envs.policy_controller import ModelController
-
-_SIM_CONFIG_PATH = root / "configs" / "sim_config.toml"
-_RESULTS_DIR     = root / "results"
-
-from PySide6.QtCore import QObject, QThread, Signal, Slot, QTimer, Qt
+from PySide6.QtCore import QThread, Signal, Slot, QTimer, Qt
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter,
     QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -43,240 +15,23 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QFontDatabase, QImage, QPixmap
 import pyqtgraph as pg
 
-_PEND_DEG_PER_COUNT = 360.0 / 4096
-_ARM_DEG_PER_COUNT  = 360.0 / 1716
-_SIM_TIMESTEP       = 0.001
-_DATA_EMIT_EVERY    = 10   # emit data_ready every N steps → 100 Hz
+from gym_envs.observation import PENDULUM_LSB, MOTOR_LSB
+from gym_envs.pendulum_sim import PWM_MAX, MAX_VOLTAGE
+from gym_envs.policy_controller import ModelController
+from gui.ring_buffer import RingBuffer
+from gui.workers import SimWorker, RenderWorker, _DATA_EMIT_EVERY
 
-HISTORY_S    = 5.0
-MAXLEN       = int(HISTORY_S * 1000 / _DATA_EMIT_EVERY)  # 500
-PLOT_HZ      = 30
-RENDER_W     = 800
-RENDER_H     = 600
-RENDER_FPS   = 30
+_ROOT        = Path(__file__).resolve().parent.parent
+_RESULTS_DIR = _ROOT / "results"
+
+_PEND_DEG_PER_COUNT = math.degrees(PENDULUM_LSB)
+_ARM_DEG_PER_COUNT  = math.degrees(MOTOR_LSB)
+
+HISTORY_S = 5.0
+MAXLEN    = int(HISTORY_S * 1000 / _DATA_EMIT_EVERY)
+PLOT_HZ   = 30
 
 _AGENTS = ("PPO", "SAC", "A2C")
-
-
-class RingBuffer:
-    """Pre-allocated circular buffer for three float64 time-series."""
-
-    def __init__(self, capacity: int) -> None:
-        self._cap  = capacity
-        self._t    = np.empty(capacity)
-        self._pend = np.empty(capacity)
-        self._arm  = np.empty(capacity)
-        self._head = 0
-        self._size = 0
-
-    def append(self, t: float, pend: float, arm: float) -> None:
-        i = self._head % self._cap
-        self._t[i]    = t
-        self._pend[i] = pend
-        self._arm[i]  = arm
-        self._head   += 1
-        if self._size < self._cap:
-            self._size += 1
-
-    def arrays(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        n = self._size
-        if n == 0:
-            empty = np.empty(0)
-            return empty, empty, empty
-        if n < self._cap:
-            return self._t[:n], self._pend[:n], self._arm[:n]
-        start = self._head % self._cap
-        idx   = np.arange(start, start + self._cap) % self._cap
-        return self._t[idx], self._pend[idx], self._arm[idx]
-
-    def clear(self) -> None:
-        self._head = 0
-        self._size = 0
-
-
-class StateSnapshot:
-    """Lock-protected handoff of (qpos, qvel) from the physics thread to the render thread."""
-
-    def __init__(self, nq: int, nv: int) -> None:
-        self._lock = threading.Lock()
-        self._qpos = np.zeros(nq)
-        self._qvel = np.zeros(nv)
-
-    def publish(self, qpos: np.ndarray, qvel: np.ndarray) -> None:
-        with self._lock:
-            self._qpos[:] = qpos
-            self._qvel[:] = qvel
-
-    def read(self) -> tuple[np.ndarray, np.ndarray]:
-        with self._lock:
-            return self._qpos.copy(), self._qvel.copy()
-
-
-class SimWorker(QObject):
-    """Runs PendulumSim at 1 kHz in a background QThread."""
-
-    data_ready  = Signal(int, int, int)   # t_us, motor_enc, pend_enc
-    ctrl_error  = Signal(str)             # controller compute() raised
-
-    def __init__(self) -> None:
-        super().__init__()
-        cfg = SimConfig.from_toml(_SIM_CONFIG_PATH) if _SIM_CONFIG_PATH.exists() else SimConfig()
-        self._sim        = PendulumSim(sim_config=cfg)
-        self._snapshot   = StateSnapshot(self._sim._model.nq, self._sim._model.nv)
-        self._pwm: int   = 0
-        self._running    = False
-
-        # manual reset flag
-        self._reset_flag = False
-
-        # controller flags (set from main thread via DirectConnection, GIL-safe)
-        self._ctrl_active            = False
-        self._ctrl_start_flag        = False
-        self._ctrl_stop_flag         = False
-        self._controller             = None   # Controller instance
-        self._ctrl_initial_angle_rad = 0.0
-
-        # pending disturbance ("hit") in radians, accumulated across clicks
-        self._disturb_pending_rad    = 0.0
-
-    @Slot()
-    def start_sim(self) -> None:
-        last_reading = self._sim.reset(pendulum_down=True)
-        self._running = True
-        step_count    = 0
-        wall_next     = time.perf_counter()
-
-        while self._running:
-
-            if self._reset_flag:
-                self._reset_flag  = False
-                self._ctrl_active = False
-                last_reading = self._sim.reset(pendulum_down=True)
-                wall_next = time.perf_counter()
-
-            if self._ctrl_start_flag:
-                self._ctrl_start_flag = False
-                self._ctrl_active     = True
-                last_reading = self._sim.reset(
-                    initial_angle_rad=self._ctrl_initial_angle_rad
-                )
-                wall_next = time.perf_counter()
-
-            if self._ctrl_stop_flag:
-                self._ctrl_stop_flag = False
-                self._ctrl_active    = False
-                self._pwm            = 0
-
-            if self._disturb_pending_rad != 0.0:
-                self._sim.apply_disturbance(self._disturb_pending_rad)
-                self._disturb_pending_rad = 0.0
-
-            # choose PWM source
-            if self._ctrl_active and self._controller is not None:
-                try:
-                    pwm = self._controller.compute(
-                        last_reading.pend_enc,
-                        last_reading.motor_enc,
-                        last_reading.t_us,
-                    )
-                except Exception as e:
-                    self._ctrl_active = False
-                    self.ctrl_error.emit(str(e))
-                    pwm = 0
-            else:
-                pwm = self._pwm
-
-            last_reading = self._sim.step(pwm)
-            step_count  += 1
-
-            if step_count % _DATA_EMIT_EVERY == 0:
-                self.data_ready.emit(
-                    last_reading.t_us,
-                    last_reading.motor_enc,
-                    last_reading.pend_enc,
-                )
-                self._snapshot.publish(self._sim._data.qpos, self._sim._data.qvel)
-
-            wall_next += _SIM_TIMESTEP
-            slack = wall_next - time.perf_counter()
-            if slack > 0:
-                time.sleep(slack)
-
-    # --- slots called via DirectConnection from main thread (GIL-safe) ---
-
-    @Slot(int)
-    def set_pwm(self, pwm: int) -> None:
-        self._pwm = pwm
-
-    @Slot()
-    def request_reset(self) -> None:
-        self._pwm        = 0
-        self._reset_flag = True
-
-    @Slot()
-    def activate_controller(self) -> None:
-        self._ctrl_start_flag = True
-
-    @Slot()
-    def deactivate_controller(self) -> None:
-        self._ctrl_stop_flag = True
-
-    @Slot(float)
-    def apply_disturbance(self, delta_rad: float) -> None:
-        self._disturb_pending_rad += delta_rad
-
-    @Slot()
-    def stop(self) -> None:
-        self._running = False
-
-
-class RenderWorker(QObject):
-    """Offscreen 3D render at RENDER_FPS in its own QThread.
-
-    Reads a StateSnapshot published by the physics thread and renders from its own
-    MjData, so the expensive render() (which releases the GIL) runs in parallel with
-    the 1 kHz loop instead of stalling it.
-    """
-
-    frame_ready = Signal(object)   # numpy uint8 H×W×3 RGB
-
-    def __init__(self, model, snapshot: StateSnapshot) -> None:
-        super().__init__()
-        self._model    = model
-        self._snapshot = snapshot
-        self._data     = mujoco.MjData(model)
-        self._running  = False
-
-    @Slot()
-    def run(self) -> None:
-        try:
-            renderer = mujoco.Renderer(self._model, height=RENDER_H, width=RENDER_W)
-        except Exception:
-            return
-
-        self._running = True
-        period   = 1.0 / RENDER_FPS
-        wall_next = time.perf_counter()
-        while self._running:
-            qpos, qvel = self._snapshot.read()
-            self._data.qpos[:] = qpos
-            self._data.qvel[:] = qvel
-            mujoco.mj_forward(self._model, self._data)
-            renderer.update_scene(self._data)
-            self.frame_ready.emit(renderer.render().copy())
-
-            wall_next += period
-            slack = wall_next - time.perf_counter()
-            if slack > 0:
-                time.sleep(slack)
-            else:
-                wall_next = time.perf_counter()
-
-        renderer.close()
-
-    @Slot()
-    def stop(self) -> None:
-        self._running = False
 
 
 class MainWindow(QMainWindow):
@@ -308,7 +63,6 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
         self.setCentralWidget(splitter)
 
-        # ── Left: controls (always visible) ─────────────────────────────
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -316,7 +70,6 @@ class MainWindow(QMainWindow):
         scroll.setMinimumWidth(300)
         splitter.addWidget(scroll)
 
-        # ── Center: 3D view (expanding) ─────────────────────────────────
         view_box    = QGroupBox("3D view")
         view_layout = QVBoxLayout(view_box)
         view_layout.setContentsMargins(4, 4, 4, 4)
@@ -328,7 +81,6 @@ class MainWindow(QMainWindow):
         view_layout.addWidget(self._view_label)
         splitter.addWidget(view_box)
 
-        # ── Right: plots (stacked, smaller) ─────────────────────────────
         plot_widget = QWidget()
         plot_layout = QVBoxLayout(plot_widget)
         plot_layout.setContentsMargins(4, 4, 4, 4)
@@ -364,7 +116,6 @@ class MainWindow(QMainWindow):
         mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         mono.setPointSize(11)
 
-        # Live readings
         status_box    = QGroupBox("Live readings")
         status_layout = QGridLayout(status_box)
         self._lbl_pend = QLabel("-- deg")
@@ -377,7 +128,6 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self._lbl_arm,       1, 1)
         layout.addWidget(status_box)
 
-        # Set-and-apply command
         cmd_box    = QGroupBox("Set command")
         cmd_layout = QGridLayout(cmd_box)
 
@@ -391,7 +141,7 @@ class MainWindow(QMainWindow):
 
         cmd_layout.addWidget(QLabel("Voltage  (-12 … +12 V):"), 2, 0, 1, 2)
         self._volt_spin = QDoubleSpinBox()
-        self._volt_spin.setRange(-12.0, 12.0)
+        self._volt_spin.setRange(-MAX_VOLTAGE, MAX_VOLTAGE)
         self._volt_spin.setSingleStep(0.5)
         self._volt_spin.setDecimals(1)
         self._volt_spin.setValue(0.0)
@@ -406,7 +156,6 @@ class MainWindow(QMainWindow):
         cmd_layout.addWidget(btn_stop,  4, 1)
         layout.addWidget(cmd_box)
 
-        # Jog
         jog_box    = QGroupBox("Jog  (hold to move, releases to 0)")
         jog_layout = QGridLayout(jog_box)
 
@@ -427,7 +176,6 @@ class MainWindow(QMainWindow):
         jog_layout.addWidget(btn_ccw, 1, 1)
         layout.addWidget(jog_box)
 
-        # External controller
         ctrl_box    = QGroupBox("External Controller")
         ctrl_layout = QGridLayout(ctrl_box)
 
@@ -468,7 +216,6 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(ctrl_box)
 
-        # Trained model (SB3 .zip)
         model_box    = QGroupBox("Trained Model")
         model_layout = QGridLayout(model_box)
 
@@ -504,7 +251,6 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(model_box)
 
-        # Disturbance ("hit" the pendulum)
         hit_box    = QGroupBox("Disturbance  (hit the pendulum)")
         hit_layout = QGridLayout(hit_box)
 
@@ -526,7 +272,6 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(hit_box)
 
-        # Reset
         btn_reset = QPushButton("Reset simulation")
         btn_reset.clicked.connect(self._reset_sim)
         layout.addWidget(btn_reset)
@@ -535,7 +280,6 @@ class MainWindow(QMainWindow):
         return panel
 
     def _start_worker(self) -> None:
-        # Physics thread: runs PendulumSim at 1 kHz, publishes state snapshots.
         self._thread = QThread(self)
         self._worker = SimWorker()
         self._worker.moveToThread(self._thread)
@@ -544,13 +288,12 @@ class MainWindow(QMainWindow):
         self._worker.data_ready.connect(self._on_data)
         self._worker.ctrl_error.connect(self._on_ctrl_error)
 
-        self._send_pwm.connect(self._worker.set_pwm,               Qt.DirectConnection)
-        self._send_reset.connect(self._worker.request_reset,        Qt.DirectConnection)
+        self._send_pwm.connect(self._worker.set_pwm,                     Qt.DirectConnection)
+        self._send_reset.connect(self._worker.request_reset,              Qt.DirectConnection)
         self._send_ctrl_start.connect(self._worker.activate_controller,   Qt.DirectConnection)
         self._send_ctrl_stop.connect(self._worker.deactivate_controller,  Qt.DirectConnection)
-        self._send_disturb.connect(self._worker.apply_disturbance,         Qt.DirectConnection)
+        self._send_disturb.connect(self._worker.apply_disturbance,        Qt.DirectConnection)
 
-        # Render thread: offscreen 3D at RENDER_FPS, decoupled from the 1 kHz loop.
         self._render_thread = QThread(self)
         self._render_worker = RenderWorker(self._worker._sim._model, self._worker._snapshot)
         self._render_worker.moveToThread(self._render_thread)
@@ -595,11 +338,9 @@ class MainWindow(QMainWindow):
         self._lbl_pend.setText(f"{pend[-1]:+.1f} deg")
         self._lbl_arm.setText(f"{arm[-1]:+.1f} deg")
 
-    # ── controller ─────────────────────────────────────────────────────
-
     def _browse_controller(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select controller script", str(root), "Python files (*.py)"
+            self, "Select controller script", str(_ROOT), "Python files (*.py)"
         )
         if path:
             self._ctrl_path_edit.setText(path)
@@ -632,7 +373,7 @@ class MainWindow(QMainWindow):
         self._begin_control(ctrl, self._ctrl_status_lbl)
 
     def _browse_model(self) -> None:
-        start_dir = _RESULTS_DIR if _RESULTS_DIR.exists() else root
+        start_dir = _RESULTS_DIR if _RESULTS_DIR.exists() else _ROOT
         path, _ = QFileDialog.getOpenFileName(
             self, "Select trained model", str(start_dir), "SB3 models (*.zip)"
         )
@@ -693,16 +434,14 @@ class MainWindow(QMainWindow):
         lbl.setText(f"Error: {msg}")
         self._set_control_active(False)
 
-    # ── manual controls ─────────────────────────────────────────────────
-
     def _sync_volt_from_pwm(self, pwm: int) -> None:
         self._volt_spin.blockSignals(True)
-        self._volt_spin.setValue(pwm * 12.0 / PWM_MAX)
+        self._volt_spin.setValue(pwm * MAX_VOLTAGE / PWM_MAX)
         self._volt_spin.blockSignals(False)
 
     def _sync_pwm_from_volt(self, volts: float) -> None:
         self._pwm_spin.blockSignals(True)
-        self._pwm_spin.setValue(int(round(volts * PWM_MAX / 12.0)))
+        self._pwm_spin.setValue(int(round(volts * PWM_MAX / MAX_VOLTAGE)))
         self._pwm_spin.blockSignals(False)
 
     def _apply_pwm(self) -> None:
@@ -732,10 +471,3 @@ class MainWindow(QMainWindow):
         self._thread.quit()
         self._thread.wait(2000)
         super().closeEvent(event)
-
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    win = MainWindow()
-    win.show()
-    sys.exit(app.exec())

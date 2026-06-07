@@ -109,7 +109,6 @@ class PendulumEnv(gym.Env):
         reward = float(self._compute_reward(obs, action))
         self.current_step += 1
 
-        done = self.current_step >= self.max_steps
         truncated = self.current_step >= self.max_steps
         if self.task == "equilibrium":
             terminated = bool(pend_pos_cos < 0.0 or abs(pend_vel) > 15.0 or abs(motor_vel) > 50.0)

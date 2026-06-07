@@ -1,10 +1,10 @@
 import math
 import pytest
+from gym_envs.observation import PENDULUM_LSB
 from gym_envs.pendulum_sim import PendulumSim
 from gym_envs.backend import SensorReading
 
-_PENDULUM_LSB = 2 * math.pi / 4096
-_MOTOR_LSB    = 2 * math.pi / 1716
+_PEND_DOWN_COUNTS = int(round(math.pi / PENDULUM_LSB)) % 4096
 
 
 @pytest.fixture
@@ -36,7 +36,7 @@ def test_reset_motor_enc_is_zero(sim):
 
 def test_reset_pendulum_down_counts(sim):
     r = sim.reset(pendulum_down=True)
-    assert r.pend_enc == 2048
+    assert r.pend_enc == _PEND_DOWN_COUNTS
 
 
 def test_reset_pendulum_up_counts(sim):

@@ -1,6 +1,6 @@
 # How to write a custom controller
 
-The GUI monitor (`scripts/gui_monitor.py`) can load any Python script that follows a simple interface. This lets you test PID, LQR, bang-bang, or any other strategy without modifying the GUI itself.
+The GUI monitor (`python -m gui`) can load any Python script that follows a simple interface. This lets you test PID, LQR, bang-bang, or any other strategy without modifying the GUI itself.
 
 ---
 
@@ -119,7 +119,7 @@ Save this file anywhere on your machine, then load it from the GUI.
 
 ## Loading your controller in the GUI
 
-1. Run `python scripts/gui_monitor.py`.
+1. Run `python -m gui`.
 2. In the **External Controller** section on the right panel, type the path to your script (or click `···` to browse).
 3. Set the **Perturbation from upright** angle — how many degrees off-center the pendulum starts. A small value (2-5°) gives the controller a chance to recover; a large value is a harder challenge.
 4. Click **Start control**. The simulation resets with the pendulum at that angle and your `compute()` takes over immediately.

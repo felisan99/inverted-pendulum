@@ -5,7 +5,7 @@ import pytest
 
 from gym_envs.pendulum_env import PendulumEnv
 from gym_envs.backend import SensorReading
-from gym_envs.observation import _MOTOR_LSB, _PENDULUM_LSB
+from gym_envs.observation import MOTOR_LSB, PENDULUM_LSB
 
 
 # ---------------------------------------------------------------------------
@@ -13,8 +13,8 @@ from gym_envs.observation import _MOTOR_LSB, _PENDULUM_LSB
 # ---------------------------------------------------------------------------
 
 def _reading(t_us: int, motor_rad: float = 0.0, pend_deg: float = 0.0) -> SensorReading:
-    pend_enc  = int(round(math.radians(pend_deg) / _PENDULUM_LSB)) % 4096
-    motor_enc = int(round(motor_rad / _MOTOR_LSB))
+    pend_enc  = int(round(math.radians(pend_deg) / PENDULUM_LSB)) % 4096
+    motor_enc = int(round(motor_rad / MOTOR_LSB))
     return SensorReading(t_us, motor_enc, pend_enc)
 
 
@@ -109,7 +109,7 @@ def test_equilibrium_reset_position_within_offset():
         obs, _ = env.reset(seed=seed)
         pend_sin, pend_cos = obs[3], obs[4]
         angle = math.atan2(pend_sin, pend_cos)
-        assert abs(angle) <= offset + _PENDULUM_LSB, (
+        assert abs(angle) <= offset + PENDULUM_LSB, (
             f"seed={seed}: pendulum angle {angle:.4f} outside offset {offset}"
         )
     env.close()
@@ -345,4 +345,4 @@ def test_info_rpm_matches_obs_motor_vel(env_eq):
 
 def test_pendulum_lsb_finer_than_motor_lsb():
     """AS5600 (12-bit) should have finer resolution than Hall encoder (1716 steps)."""
-    assert _PENDULUM_LSB < _MOTOR_LSB
+    assert PENDULUM_LSB < MOTOR_LSB

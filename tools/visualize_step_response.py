@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-visualizar_step_100.py
+visualize_step_response.py
 
 Muestra la simulacion STEP_1023_100 en ventana interactiva de MuJoCo
 a velocidad configurable y abre la grafica comparativa al terminar.
 
 Uso:
-    python mujoco_sim/visualizar_step_100.py [--speed 3.0]
+    python tools/visualize_step_response.py [--speed 3.0]
 """
 
 import argparse
@@ -22,7 +22,7 @@ import mujoco_viewer
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from mujoco_sim.characterize_system import (
+from tools.characterize_system import (
     _clamp,
     build_parametrized_model,
     load_config,
@@ -63,7 +63,7 @@ def main():
     print(f"Escalon: 0 — {step_end:.3f} s  |  Oscilacion libre: {step_end:.3f} — {duration:.0f} s")
     print("Cierra la ventana para abrir la grafica comparativa.\n")
 
-    RENDER_FPS     = 30
+    RENDER_FPS       = 30
     steps_per_render = max(1, round(speed / (RENDER_FPS * model.opt.timestep)))
 
     print(f"Rendering: {RENDER_FPS} FPS objetivo — {steps_per_render} pasos sim por frame")
@@ -91,13 +91,13 @@ def main():
     print("Simulacion terminada. Cerrando ventana...")
     viewer.close()
 
-    plot_path = ROOT / "results" / "characterization" / "step_1023_100_comparacion.png"
+    plot_path = ROOT / "data" / "step_1023_100_comparacion.png"
     if plot_path.exists():
         print(f"Abriendo grafica: {plot_path}")
         subprocess.Popen(["open", str(plot_path)])
     else:
         print(f"Grafica no encontrada: {plot_path}")
-        print("Ejecuta primero analisis_step_100_comparacion.py para generarla.")
+        print("Ejecuta primero tools/compare_step_response.py para generarla.")
 
 
 if __name__ == "__main__":

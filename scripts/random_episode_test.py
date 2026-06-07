@@ -45,7 +45,7 @@ def run_random_agent(xml=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Aplica acciones aleatorias al entorno del péndulo.")
-    parser.add_argument("--xml", type=str, default="mujoco_sim/xml_models/pendulum_model_v3.xml", help="Ruta al archivo XML")
+    parser.add_argument("--xml", type=str, default="models/pendulum_model_v3.xml", help="Ruta al archivo XML")
     args = parser.parse_args()
 
     run_random_agent(xml=args.xml)

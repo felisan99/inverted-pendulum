@@ -19,12 +19,12 @@ import numpy as np
 
 from gym_envs.backend import SensorReading
 
-_PENDULUM_LSB = 2 * math.pi / 4096
-_MOTOR_LSB    = 2 * math.pi / 1716
+PENDULUM_LSB = 2 * math.pi / 4096
+MOTOR_LSB    = 2 * math.pi / 1716
 
 
-def _pend_to_rad(pend_enc: int) -> float:
-    angle = pend_enc * _PENDULUM_LSB
+def pend_to_rad(pend_enc: int) -> float:
+    angle = pend_enc * PENDULUM_LSB
     if angle > math.pi:
         angle -= 2.0 * math.pi
     return angle
@@ -34,14 +34,14 @@ class ObservationEncoder:
     """Stateful: keeps the previous reading for finite-difference velocity."""
 
     def reset(self, reading: SensorReading) -> np.ndarray:
-        self._prev_motor = reading.motor_enc * _MOTOR_LSB
-        self._prev_pend  = _pend_to_rad(reading.pend_enc)
+        self._prev_motor = reading.motor_enc * MOTOR_LSB
+        self._prev_pend  = pend_to_rad(reading.pend_enc)
         self._prev_t_us  = reading.t_us
         return self._obs(self._prev_motor, self._prev_pend, 0.0, 0.0)
 
     def update(self, reading: SensorReading) -> np.ndarray:
-        motor = reading.motor_enc * _MOTOR_LSB
-        pend  = _pend_to_rad(reading.pend_enc)
+        motor = reading.motor_enc * MOTOR_LSB
+        pend  = pend_to_rad(reading.pend_enc)
         dt    = max((reading.t_us - self._prev_t_us) * 1e-6, 1e-6)
         motor_vel = (motor - self._prev_motor) / dt
         pend_vel  = (pend  - self._prev_pend)  / dt

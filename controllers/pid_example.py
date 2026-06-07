@@ -1,7 +1,7 @@
 """
 Template PID controller for the inverted pendulum GUI monitor.
 
-Interface contract (required by gui_monitor.py):
+Interface contract (required by the GUI):
   - Class named Controller
   - reset() -> None        called once before control starts
   - compute(...) -> int    called at ~1 kHz, returns PWM in [-1023, +1023]

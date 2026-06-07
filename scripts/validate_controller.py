@@ -1,9 +1,9 @@
 """
-Headless validation harness for external controllers (gui_monitor.py plugins).
+Headless validation harness for external controllers (gui/ plugins).
 
 Runs a Controller from a script file against PendulumSim at 1 kHz with an
 initial perturbation from upright, with NO display, and reports whether it
-keeps the pendulum balanced. Mirrors the load + step path of gui_monitor.py
+keeps the pendulum balanced. Mirrors the load + step path of the GUI
 (same importlib loader, same reset(initial_angle_rad=...), same
 compute(pend_enc, motor_enc, t_us) call), so a PASS here predicts the GUI.
 
@@ -24,17 +24,8 @@ from pathlib import Path
 root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root))
 
+from gym_envs.observation import MOTOR_LSB, pend_to_rad
 from gym_envs.pendulum_sim import PendulumSim, PWM_MAX
-
-_PEND_RAD_PER_COUNT = 2 * math.pi / 4096
-_ARM_RAD_PER_COUNT  = 2 * math.pi / 1716
-
-
-def pend_to_rad(pend_enc: int) -> float:
-    angle = pend_enc * _PEND_RAD_PER_COUNT
-    if angle > math.pi:
-        angle -= 2 * math.pi
-    return angle
 
 
 def load_controller_class(path: Path):
@@ -76,7 +67,7 @@ def simulate(controller, perturb_rad: float, n_steps: int):
         reading = sim.step(pwm)
         t.append(reading.t_us * 1e-6)
         phi.append(pend_to_rad(reading.pend_enc))
-        arm.append(reading.motor_enc * _ARM_RAD_PER_COUNT)
+        arm.append(reading.motor_enc * MOTOR_LSB)
         pwm_hist.append(pwm)
     sim.close()
     return t, phi, arm, pwm_hist
