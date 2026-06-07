@@ -29,7 +29,7 @@ python scripts/random_episode_test.py --xml mujoco_sim/xml_models/pendulum_model
 
 **Run system characterization (fits model params against real bench data):**
 ```bash
-python -m mujoco_sim.characterize_system --config configs/characterization_step.toml
+python -m mujoco_sim.characterize_system --config configs/step_1023_100_sim.toml
 ```
 
 **Run tests with pytest:**
@@ -71,7 +71,6 @@ python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mu
 
 - **`scripts/gui_monitor.py`** - Real-time desktop GUI (PySide6 + PyQtGraph). Runs `PendulumSim` at 1 kHz in a `QThread` and shows live plots of both joints plus an offscreen 3D render (`mujoco.Renderer`). Three-column layout: controls (left), expanding 3D view (center), stacked plots (right). Control panel: set PWM/voltage (Apply), hold-to-move jog buttons, a Disturbance ("hit") group, and Reset. Supports loading external controller scripts and trained SB3 models (see `docs/custom-controller-tutorial.md`). Run with `python scripts/gui_monitor.py`; requires a display.
 
-- **`utils/plotting.py`** - Plots learning curves from SB3 Monitor CSV files.
 
 ### Observation Design
 
@@ -176,7 +175,7 @@ class Controller:
 
 Loading flow: the user selects a script file and an initial perturbation angle, then clicks **Start control**. `SimWorker` re-imports the module fresh (so edits take effect without restarting), calls `reset()`, then routes every `step()` call through `compute()` instead of the manual PWM flag. If `compute()` raises, the worker catches the exception, sets PWM to 0, and emits an error string to the status label. **Stop control** returns to manual mode.
 
-The script file and `Controller` class live entirely outside this repo; no imports from the project are needed. See `docs/custom-controller-tutorial.md` for the full interface contract, sensor reference, and examples (`controllers/pid_example.py`, `controllers/threshold_example.py`).
+The script file and `Controller` class live entirely outside this repo; no imports from the project are needed. See `docs/custom-controller-tutorial.md` for the full interface contract, sensor reference, and an example (`controllers/pid_example.py`).
 
 **Trained model system**
 
@@ -191,9 +190,9 @@ The control panel has a Disturbance group: a magnitude in degrees plus **Hit +**
 - New plot: add a column to `RingBuffer`, update `_on_data` and `_refresh_plots`.
 - New controller feature: the interface contract is the only coupling point; anything else can be added to `Controller` freely.
 
-## CI
+## Tests
 
-GitHub Actions runs `pytest test/` on every PR and every push to `main` (`.github/workflows/tests.yml`). Tests use `render_mode=None` and do not require a display.
+There is no CI configured (the GitHub Actions workflow was removed). Run the suite locally with `pytest test/`. Tests use `render_mode=None` and do not require a display.
 
 ## Empirical Test Results
 

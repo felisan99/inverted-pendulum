@@ -67,11 +67,11 @@ def _pend_to_rad(pend_enc: int) -> float:
 
 class Controller:
 
-    Kp    = 20349.7  # [PWM / rad]         pendulum angle           (LQR K_phi)
+    Kp    =  8621.6  # [PWM / rad]         pendulum angle           (LQR K_phi)
     Ki    =     0.0  # [PWM / (rad·s)]     pendulum angle integral
-    Kd    =  1570.6  # [PWM / (rad/s)]     pendulum angular velocity (LQR K_phi_dot)
-    Ka    = -1018.6  # [PWM / rad]         arm position             (LQR K_theta1, negative)
-    Kb    =  -289.4  # [PWM / (rad/s)]     arm angular velocity      (LQR K_theta1_dot, negative)
+    Kd    =  1295.1  # [PWM / (rad/s)]     pendulum angular velocity (LQR K_phi_dot)
+    Ka    =  -254.6  # [PWM / rad]         arm position             (LQR K_theta1, negative)
+    Kb    =  -215.5  # [PWM / (rad/s)]     arm angular velocity      (LQR K_theta1_dot, negative)
     i_max =    0.5   # anti-windup clamp [rad·s]
 
     def __init__(self) -> None:
