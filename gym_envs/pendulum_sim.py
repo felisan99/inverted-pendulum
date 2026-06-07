@@ -58,7 +58,7 @@ class PendulumSim:
                  sim_config: SimConfig | None = None, seed: int | None = None) -> None:
         if xml_file is None:
             root = Path(__file__).resolve().parent.parent
-            xml_file = root / "models" / "pendulum_model_v3.xml"
+            xml_file = root / "models" / "pendulum_high_quality.xml"
 
         xml_file = Path(xml_file).resolve()
         if not xml_file.exists():

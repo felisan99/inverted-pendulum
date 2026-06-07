@@ -1,4 +1,4 @@
-<mujoco model="furuta_pendulum_v3">
+<mujoco model="furuta_pendulum_high_quality">
 
     <compiler angle="radian"/>
     <option timestep="0.001" gravity="0 0 -9.81"/>

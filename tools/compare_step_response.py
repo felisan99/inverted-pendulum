@@ -46,7 +46,7 @@ OMEGA_N_MODELO = math.sqrt(DELTA / GAMMA)
 
 _DEFAULT_CONFIG = {
     "simulation": {
-        "xml_model": "models/pendulum_model_v3.xml",
+        "xml_model": "models/pendulum_high_quality.xml",
         "timestep_sec": 0.001,
         "duration_sec": 12.0,
     },

@@ -61,7 +61,7 @@ def build_parametrized_model(config: dict, workspace_root: Path) -> Path:
     friction_cfg = {**_FRICTION_DEFAULTS, **config.get("friction", {})}
     motor_cfg = {**_MOTOR_DEFAULTS, **config.get("motor", {})}
 
-    xml_model_relative = simulation_cfg.get("xml_model", "models/pendulum_model_v3.xml")
+    xml_model_relative = simulation_cfg.get("xml_model", "models/pendulum_high_quality.xml")
     xml_model_path = (workspace_root / xml_model_relative).resolve()
     if not xml_model_path.exists():
         raise FileNotFoundError(f"Model file not found: {xml_model_path}")

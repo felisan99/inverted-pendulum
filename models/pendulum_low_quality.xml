@@ -1,0 +1,149 @@
+<mujoco model="furuta_pendulum_low_quality">
+
+    <compiler angle="radian"/>
+    <option timestep="0.001" gravity="0 0 -9.81"/>
+
+    <statistic extent="0.5" center="0.03 0 0.1"/>
+
+    <visual>
+        <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+        <quality shadowsize="0" offsamples="0"/>
+        <global offwidth="800" offheight="600"/>
+    </visual>
+
+    <asset>
+        <material name="floor_mat"  rgba="0.82 0.82 0.82 1"/>
+        <material name="base_mat"   rgba="0.28 0.28 0.32 1"/>
+        <material name="arm_mat"    rgba="0.85 0.30 0.10 1"/>
+        <material name="pend_mat"   rgba="0.15 0.50 0.85 1"/>
+        <material name="weight_mat" rgba="0.75 0.70 0.10 1"/>
+    </asset>
+
+    <worldbody>
+
+        <light pos="0 0 1.5" castshadow="false"/>
+
+        <geom type="plane" pos="0 0 -0.40" size="1.5 1.5 0.1"
+              material="floor_mat" contype="0" conaffinity="0"/>
+
+        <body name="base" pos="0 0 0">
+            <!-- Motor housing + gearbox column (visual only) -->
+            <geom type="cylinder" pos="0 0 -0.045" size="0.022 0.045"
+                  material="base_mat" contype="0" conaffinity="0"/>
+            <!-- Output shaft stub -->
+            <geom type="cylinder" pos="0 0 0" size="0.005 0.003"
+                  material="base_mat" contype="0" conaffinity="0"/>
+
+            <!--
+                Arm (link1): rotates about the vertical motor axis (Z).
+
+                Physical parameters (context/hardware.md):
+                  L1   = 0.0676 m    distance motor axis to pendulum axis
+                  m1   = 0.022 kg    bar (13 g) + bearing at tip (9 g)
+                  l1   = 0.049 m     composite CDM from motor axis
+                  J1zz = 8.382e-6 kg·m²  about CDM (perpendicular axes, Steiner-corrected by MuJoCo)
+
+                Armature = reflected rotor inertia = J_total - J1,motor
+                  J_total   = tau_rise * (b_arm + K_be) = 0.038 * 0.2331 = 8.858e-3 kg·m²
+                  J1,motor  = J1zz + m1*l1²             = 6.12e-5 kg·m²
+                  armature  = 8.858e-3 - 6.12e-5        = 8.797e-3 kg·m²
+
+                Damping  = b_arm = 2.0e-3 N·m·s/rad  (viscous, identified from step response
+                           without pendulum: b_arm = K_eff/K - K_be = 0.23305 - 0.23107)
+
+                Frictionloss = 0.0  (kinetic Coulomb friction at operating speed is negligible)
+                  The sweep experiment (experimento-relacion-pwm-velocidad) showed a STATIC
+                  friction threshold at 64 PWM (sustentation FWD), implying tau_static ≈ 0.159 N·m.
+                  However, the step-response identification at omega_ss = 10.899 rad/s implies
+                  kinetic frictionloss ≈ 0 (balance check: gainprm*V - K_be*omega - b_arm*omega = 0.001 N·m).
+                  MuJoCo frictionloss is velocity-independent (Coulomb model) and cannot
+                  simultaneously represent static (0.159 N·m) and kinetic (~0) regimes.
+                  For the RL operating regime (moderate-to-high motor speeds), frictionloss=0
+                  gives 0.04% error vs measured omega_ss; frictionloss=0.159 gives 8.7% error.
+            -->
+            <body name="link1" pos="0 0 0">
+                <joint name="joint1" type="hinge" axis="0 0 1"
+                       armature="8.797e-3"
+                       damping="2.0e-3"
+                       frictionloss="0.0"/>
+                <inertial pos="0.049 0 0" mass="0.022"
+                          diaginertia="1e-7 8.382e-6 8.382e-6"/>
+
+                <!-- PLA bar from motor axis to pendulum pivot -->
+                <geom type="capsule" fromto="0 0 0 0.0676 0 0" size="0.004"
+                      material="arm_mat" contype="0" conaffinity="0"/>
+                <!-- Bearing at pivot point (the 9g bearing that acts as pendulum axis) -->
+                <geom type="sphere" pos="0.0676 0 0" size="0.009"
+                      material="base_mat" contype="0" conaffinity="0"/>
+
+                <!--
+                    Pendulum: rotates about the arm axis (X in link1 frame).
+                    Angle = 0   → pendulum pointing straight up   (unstable equilibrium)
+                    Angle = pi  → pendulum pointing straight down (stable equilibrium)
+
+                    Physical parameters (context/hardware.md, official config: long pendulum + attachment):
+                      L2   = 0.300 m      total length
+                      m2   = 0.034 kg     rod (16.8 g) + attachment bearing (17.2 g)
+                      l2   = 0.2149 m     CDM with attachment at 285 mm from pivot
+                      J2zz = 2.550e-4 kg·m²  about CDM, perpendicular axes (1/12 * m2 * L2²)
+
+                    MuJoCo Steiner from inertial CDM gives:
+                      gamma = J2zz + m2*l2² = 2.550e-4 + 0.034*0.2149² = 1.825e-3 kg·m²  (pendulum pivot inertia)
+                      delta = g*m2*l2       = 9.81*0.034*0.2149         = 7.168e-2 N·m    (gravitational torque)
+
+                    Damping = b2 = 2*zeta*sqrt(gamma*delta), zeta=0.0114 → 2.60e-4 N·m·s/rad
+                -->
+                <body name="pendulum" pos="0.0676 0 0">
+                    <joint name="encoder_joint" type="hinge" axis="1 0 0"
+                           damping="2.60e-4"/>
+                    <inertial pos="0 0 0.2149" mass="0.034"
+                              diaginertia="2.550e-4 2.550e-4 1e-7"/>
+
+                    <!-- Pendulum rod (PLA/acrylic stick, 300 mm) -->
+                    <geom type="capsule" fromto="0 0 0 0 0 0.300" size="0.003"
+                          material="pend_mat" contype="0" conaffinity="0"/>
+                    <!-- Attachment: bearing used as counterweight at 285 mm from pivot -->
+                    <geom type="sphere" pos="0 0 0.285" size="0.011"
+                          material="weight_mat" contype="0" conaffinity="0"/>
+                </body>
+
+            </body>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <!--
+            DC motor JGA25-370, gearbox n=78, supply Vmax=12 V
+            Measured parameters (context/hardware.md, notes/experimento-corriente-libre/,
+                                  notes/experimento-corriente-stall/):
+              Rm          = 5.0   Ω           terminal resistance (midpoint: 4.808 Ω @ 5V, 5.5 Ω @ 12V)
+              Kt,sal      = 1.092 N·m/A       torque constant at output shaft (n * Kt_motor)
+              Ke,sal      = 1.092 V·s/rad     back-EMF constant at output shaft
+              tau_stall   = Kt,sal * Vmax/Rm  = 2.621 N·m
+
+            gainprm  = Kt,sal / Rm              = 1.092 / 5.0  = 0.2184  [N·m / V]
+            biasprm  = -Kt,sal * Ke,sal / Rm    = -1.092² / 5.0 = -0.2385 [N·m / (rad/s)]
+
+            Steady-state check: omega_ss = Vmax / Ke,sal = 12 / 1.092 ≈ 10.99 rad/s
+            Measured: 10.47–10.90 rad/s  (within 5 %)
+        -->
+        <general name="dc_motor" joint="joint1"
+                 gaintype="fixed"  gainprm="0.2184"
+                 biastype="affine" biasprm="0 0 -0.2385"
+                 ctrlrange="-12 12"
+                 forcerange="-2.621 2.621"/>
+    </actuator>
+
+    <sensor>
+        <jointpos name="pendulum_pos" joint="encoder_joint"/>
+        <jointvel name="pendulum_vel" joint="encoder_joint"/>
+        <jointpos name="arm_pos"      joint="joint1"/>
+        <jointvel name="arm_vel"      joint="joint1"/>
+    </sensor>
+
+    <keyframe>
+        <key name="upright" qpos="0 0"          ctrl="0"/>
+        <key name="hanging" qpos="0 3.14159265" ctrl="0"/>
+    </keyframe>
+
+</mujoco>

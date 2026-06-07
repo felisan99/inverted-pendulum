@@ -24,7 +24,7 @@ uv sync --group dev
 
 **Run a random episode to validate the environment:**
 ```bash
-python scripts/random_episode_test.py --xml models/pendulum_model_v3.xml
+python scripts/random_episode_test.py --xml models/pendulum_high_quality.xml
 ```
 
 **Run system characterization (fits model params against real bench data):**
@@ -39,7 +39,7 @@ pytest test/
 
 **Run a trained model:**
 ```bash
-python -m agents.predict --model-path results/run_N/best_model.zip --xml-file models/pendulum_model_v3.xml --agent PPO --task equilibrium
+python -m agents.predict --model-path results/run_N/best_model.zip --xml-file models/pendulum_high_quality.xml --agent PPO --task equilibrium
 ```
 
 ## Architecture
@@ -49,7 +49,7 @@ python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mo
 - **`gym_envs/`** - Simulation backend, observation encoding, and RL environment, organized in three layers so a policy trained in sim can later drive the real ESP32 without re-deriving feature extraction. See `gym_envs/CLAUDE.md` for the full design. Summary:
   - **`backend.py`** - `PendulumBackend` (a `runtime_checkable` Protocol) defines the firmware contract: signed 10-bit PWM in, raw `SensorReading(t_us, motor_enc, pend_enc)` out. `SensorReading` lives here (import it from `gym_envs.backend`). A future `HardwareBackend` would satisfy the same contract.
   - **`pendulum_sim.py`** - `PendulumSim`, the MuJoCo implementation of `PendulumBackend`. Mirrors the firmware: PWM in, raw counts out, 1 kHz. Applies optional sensor non-idealities from a `SimConfig` (noise, latency, timing jitter). Single owner of the human 3D viewer. Used by the GUI, the controller tests, and `PendulumEnv`.
-  - **`observation.py`** - `ObservationEncoder`, the single source of truth converting a `SensorReading` to the 6-dim observation `[sin(motor), cos(motor), vel_motor, sin(pendulum), cos(pendulum), vel_pendulum]`. Same code in training and at deployment. `_MOTOR_LSB`/`_PENDULUM_LSB` live here.
+  - **`observation.py`** - `ObservationEncoder`, the single source of truth converting a `SensorReading` to the 6-dim observation `[sin(motor), cos(motor), vel_motor, sin(pendulum), cos(pendulum), vel_pendulum]`. Same code in training and at deployment. `MOTOR_LSB`/`PENDULUM_LSB` live here.
   - **`sim_config.py`** - `SimConfig` dataclass (defaults = ideal) with `from_toml()`. Profiles in `configs/sim_ideal.toml` and `configs/sim_config.toml`.
   - **`pendulum_env.py`** - `PendulumEnv(gym.Env)`, a composition adapter over a backend + encoder (NOT a subclass of `PendulumSim`). Continuous action space: voltage `[-12V, +12V]`, routed through the backend's 10-bit PWM channel. Two tasks: `"equilibrium"` and `"swing_up"`. DC motor torque via the XML `general` actuator (`gainprm=0.2184`, `biasprm=-0.2385`). Timestep 0.001 s (1 kHz).
 
@@ -63,9 +63,9 @@ python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mo
 
 - **`tools/visualize_step_response.py`** - Interactive 3D visualizer for the STEP_1023_100 experiment. Opens a MuJoCo viewer window and shows the comparison plot when done. Use `--speed` to control playback rate (default 3.0×). Requires a display; on macOS use `mujoco_viewer.MujocoViewer` — do not use `mujoco.viewer.launch_passive` without `mjpython`.
 
-- **`scripts/`** - Manual validation scripts (`random_episode_test.py`, `max_voltage_test.py`). Run interactively with `--xml models/pendulum_model_v3.xml`; require a display (not headless).
+- **`scripts/`** - Manual validation scripts (`random_episode_test.py`, `max_voltage_test.py`). Run interactively with `--xml models/pendulum_high_quality.xml`; require a display (not headless).
 
-- **`models/`** - MuJoCo XML model files. `pendulum_model_v3.xml` is the only model — validated against real hardware (sim-to-real error: ωn 0.09%, ζ 1.07%).
+- **`models/`** - MuJoCo XML model files. `pendulum_high_quality.xml` is the validated model with full visual shaders. `pendulum_low_quality.xml` has the same physics but minimal visuals (no shadows, no MSAA, no skybox) for better GUI framerate.
 
 - **`configs/`** - TOML configuration files for `characterize_system.py`. Each file defines physical parameters, initial conditions, input signal, and output paths.
 
@@ -93,7 +93,7 @@ Training runs save to `results/run_N/` where N is auto-incremented. Each run con
 The reference experiment applies a 100 ms voltage pulse (PWM 1023, ~5 V) to the motor and records the free oscillation of the pendulum. It is the ground truth for validating that MuJoCo parameters match real hardware.
 
 - Config: `configs/sim_to_real_validation.toml`
-- XML model: `models/pendulum_model_v3.xml`
+- XML model: `models/pendulum_high_quality.xml`
 - Real data: `/Users/felipe/Documents/Tesis/Informe-Final/notes/experimento-validacion-sim-real/`
 - Full documentation: `.../experimento-validacion-sim-real/README.md`
 
