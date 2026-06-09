@@ -13,6 +13,7 @@ dependencies = [
     "pyqtgraph>=0.13",
     "pyside6>=6.7",
     "stable-baselines3>=2.8.0",
+    "tensorboard>=2.20.0",
 ]
 
 [dependency-groups]

@@ -9,7 +9,7 @@ from gym_envs.sim_config import SimConfig
 import torch
 
 class RLTrainer:
-    def __init__(self, agent_type="PPO", xml_file=None, policy="MlpPolicy", agent_kwargs=None, seed=None, render_mode="human", max_steps=None, create_run_dir=True, task="equilibrium", sim_config: SimConfig | None = None):
+    def __init__(self, agent_type="PPO", xml_file=None, policy="MlpPolicy", agent_kwargs=None, seed=None, render_mode="human", max_steps=None, create_run_dir=True, task="equilibrium", sim_config: SimConfig | None = None, starting_offset: float = 0.4):
         self.agent_type = agent_type.upper()
         self.xml_file = xml_file
         self.policy = policy
@@ -20,6 +20,7 @@ class RLTrainer:
         self.create_run_dir = create_run_dir
         self.task = task
         self.sim_config = sim_config
+        self.starting_offset = starting_offset
 
         self.base_dir = str(Path(__file__).resolve().parent.parent / "results")
         self.run_dir = self._create_run_dir() if create_run_dir else None
@@ -74,11 +75,17 @@ class RLTrainer:
         agent_cls = self.agents[self.agent_type]
         device = self._get_device()
 
+        try:
+            import tensorboard  # noqa: F401
+            tb_log = self.run_dir
+        except ImportError:
+            tb_log = None
+
         return agent_cls(
             self.policy,
             env,
             verbose=verbose,
-            tensorboard_log=self.run_dir,
+            tensorboard_log=tb_log,
             device=device,
             **self.agent_kwargs,
         )
@@ -87,7 +94,7 @@ class RLTrainer:
         """
         Crea una instancia del entorno con los wrappers necesarios.
         """
-        env = PendulumEnv(xml_file=self.xml_file, render_mode=self.render_mode if not for_prediction else "human", max_steps=self.max_steps, task=self.task, sim_config=self.sim_config, seed=self.seed)
+        env = PendulumEnv(xml_file=self.xml_file, render_mode=self.render_mode if not for_prediction else "human", max_steps=self.max_steps, task=self.task, sim_config=self.sim_config, seed=self.seed, starting_offset=self.starting_offset)
 
         if self.seed is not None:
             env.reset(seed=self.seed)
