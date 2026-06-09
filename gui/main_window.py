@@ -21,8 +21,10 @@ from gym_envs.policy_controller import ModelController
 from gui.ring_buffer import RingBuffer
 from gui.workers import SimWorker, RenderWorker, _DATA_EMIT_EVERY
 
-_ROOT        = Path(__file__).resolve().parent.parent
-_RESULTS_DIR = _ROOT / "results"
+_ROOT            = Path(__file__).resolve().parent.parent
+_RESULTS_DIR     = _ROOT / "results"
+_CONTROLLERS_DIR = _ROOT / "controllers"
+_MODELS_DIR      = _ROOT / "rl_models"
 
 _PEND_DEG_PER_COUNT = math.degrees(PENDULUM_LSB)
 _ARM_DEG_PER_COUNT  = math.degrees(MOTOR_LSB)
@@ -98,8 +100,16 @@ class MainWindow(QMainWindow):
         self._arm_curve  = self._arm_plot.plot(pen=pg.mkPen("#a5d6a7", width=1.5))
         self._arm_plot.showGrid(x=True, y=True, alpha=0.3)
 
+        self._pwm_plot   = pg.PlotWidget(title="Controller PWM output")
+        self._pwm_plot.setLabel("left", "PWM")
+        self._pwm_plot.setLabel("bottom", "Time", units="s")
+        self._pwm_plot.setYRange(-PWM_MAX, PWM_MAX, padding=0.05)
+        self._pwm_curve  = self._pwm_plot.plot(pen=pg.mkPen("#ffb74d", width=1.5))
+        self._pwm_plot.showGrid(x=True, y=True, alpha=0.3)
+
         plot_layout.addWidget(self._pend_plot)
         plot_layout.addWidget(self._arm_plot)
+        plot_layout.addWidget(self._pwm_plot)
         splitter.addWidget(plot_widget)
 
         splitter.setStretchFactor(0, 0)
@@ -303,8 +313,8 @@ class MainWindow(QMainWindow):
         self._thread.start()
         self._render_thread.start()
 
-    @Slot(int, int, int)
-    def _on_data(self, t_us: int, motor_enc: int, pend_enc: int) -> None:
+    @Slot(int, int, int, int)
+    def _on_data(self, t_us: int, motor_enc: int, pend_enc: int, pwm: int) -> None:
         pend_deg = pend_enc * _PEND_DEG_PER_COUNT
         if pend_deg > 180.0:
             pend_deg -= 360.0
@@ -312,6 +322,7 @@ class MainWindow(QMainWindow):
             t_us * 1e-6,
             pend_deg,
             motor_enc * _ARM_DEG_PER_COUNT,
+            float(pwm),
         )
 
     @Slot(object)
@@ -324,7 +335,7 @@ class MainWindow(QMainWindow):
         self._view_label.setPixmap(pix)
 
     def _refresh_plots(self) -> None:
-        t, pend, arm = self._ring.arrays()
+        t, pend, arm, pwm = self._ring.arrays()
         if t.size == 0:
             return
         t_max = t[-1]
@@ -332,15 +343,18 @@ class MainWindow(QMainWindow):
 
         self._pend_curve.setData(t[idx:], pend[idx:])
         self._arm_curve.setData(t[idx:], arm[idx:])
+        self._pwm_curve.setData(t[idx:], pwm[idx:])
         self._pend_plot.setXRange(t_max - HISTORY_S, t_max, padding=0)
         self._arm_plot.setXRange(t_max - HISTORY_S, t_max, padding=0)
+        self._pwm_plot.setXRange(t_max - HISTORY_S, t_max, padding=0)
 
         self._lbl_pend.setText(f"{pend[-1]:+.1f} deg")
         self._lbl_arm.setText(f"{arm[-1]:+.1f} deg")
 
     def _browse_controller(self) -> None:
+        start_dir = _CONTROLLERS_DIR if _CONTROLLERS_DIR.exists() else _ROOT
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select controller script", str(_ROOT), "Python files (*.py)"
+            self, "Select controller script", str(start_dir), "Python files (*.py)"
         )
         if path:
             self._ctrl_path_edit.setText(path)
@@ -373,7 +387,7 @@ class MainWindow(QMainWindow):
         self._begin_control(ctrl, self._ctrl_status_lbl)
 
     def _browse_model(self) -> None:
-        start_dir = _RESULTS_DIR if _RESULTS_DIR.exists() else _ROOT
+        start_dir = _MODELS_DIR if _MODELS_DIR.exists() else _ROOT
         path, _ = QFileDialog.getOpenFileName(
             self, "Select trained model", str(start_dir), "SB3 models (*.zip)"
         )
