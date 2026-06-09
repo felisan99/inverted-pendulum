@@ -1,7 +1,8 @@
 # STEP_1023_100 sim-to-real validation experiment.
 # Ground truth for matching MuJoCo parameters against real bench data: a 100 ms
 # voltage pulse applied to the motor, recording the pendulum's free oscillation.
-# Validated results (omega_n ~6.255 rad/s, zeta ~0.01152) come from this config.
+# Validated results (omega_n ~6.250 rad/s, zeta ~0.01312) come from this config,
+# after encoder_damping was corrected to 3.01e-4 to match the real pendulum's b2.
 # See the root CLAUDE.md "Sim-to-Real Validation: STEP_1023_100" section.
 #
 # Physical constants (motor, friction) are hardcoded in characterize_system.py.

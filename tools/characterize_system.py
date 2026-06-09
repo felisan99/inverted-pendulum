@@ -41,7 +41,7 @@ def _set_general_actuator_param(root: ET.Element, actuator_name: str, param: str
 _FRICTION_DEFAULTS: dict = {
     "joint1_damping": 0.00198,
     "joint1_frictionloss": 0.02,
-    "encoder_damping": 2.60e-4,
+    "encoder_damping": 3.01e-4,
     "encoder_frictionloss": 0.0,
 }
 

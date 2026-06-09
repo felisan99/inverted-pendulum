@@ -17,8 +17,7 @@ All commands below are run from the repository root with the venv active.
 |---|---|
 | Interactive GUI | `python -m gui` |
 | Watch step response | `python tools/visualize_step_response.py --speed 3.0` |
-| Sim-to-real comparison | `python tools/compare_step_response.py --real <csv>` |
-| Raw simulation (headless) | `python tools/characterize_system.py --config configs/sim_to_real_validation.toml` |
+| Generate step-response sim CSV | `python tools/characterize_system.py --config configs/sim_to_real_validation.toml` |
 | Train agent | `python -m agents.trainer` |
 | Run trained model | `python -m agents.predict --model-path results/run_N/best_model.zip --agent PPO --task equilibrium --xml-file models/pendulum_high_quality.xml` |
 | TensorBoard | `tensorboard --logdir results/` |
@@ -37,7 +36,7 @@ gui/              Real-time desktop GUI package (python -m gui)
 gym_envs/         Backend, observation encoder, and RL environment
 agents/           RL training (RLTrainer) and inference (predict.py)
 models/           pendulum_high_quality.xml (shaders), pendulum_low_quality.xml (fast render)
-tools/            Characterization and analysis scripts
+tools/            Characterization / simulation scripts
 scripts/          Headless validation scripts
 results/          Training runs (run_N/)
 ```

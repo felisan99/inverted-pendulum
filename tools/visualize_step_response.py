@@ -3,7 +3,8 @@
 visualize_step_response.py
 
 Muestra la simulacion STEP_1023_100 en ventana interactiva de MuJoCo
-a velocidad configurable y abre la grafica comparativa al terminar.
+a velocidad configurable. Solo visualiza el comportamiento del modelo;
+la comparacion sim-vs-real y todo el analisis viven en el repo de la tesis.
 
 Uso:
     python tools/visualize_step_response.py [--speed 3.0]
@@ -11,7 +12,6 @@ Uso:
 
 import argparse
 import math
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -61,7 +61,7 @@ def main():
 
     print(f"Simulacion STEP_1023_100 — {duration:.0f} s a {speed:.1f}x velocidad real")
     print(f"Escalon: 0 — {step_end:.3f} s  |  Oscilacion libre: {step_end:.3f} — {duration:.0f} s")
-    print("Cierra la ventana para abrir la grafica comparativa.\n")
+    print("Cierra la ventana para terminar.\n")
 
     RENDER_FPS       = 30
     steps_per_render = max(1, round(speed / (RENDER_FPS * model.opt.timestep)))
@@ -90,14 +90,6 @@ def main():
 
     print("Simulacion terminada. Cerrando ventana...")
     viewer.close()
-
-    plot_path = ROOT / "data" / "step_1023_100_comparacion.png"
-    if plot_path.exists():
-        print(f"Abriendo grafica: {plot_path}")
-        subprocess.Popen(["open", str(plot_path)])
-    else:
-        print(f"Grafica no encontrada: {plot_path}")
-        print("Ejecuta primero tools/compare_step_response.py para generarla.")
 
 
 if __name__ == "__main__":

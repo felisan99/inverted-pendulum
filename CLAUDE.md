@@ -57,11 +57,9 @@ python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mo
 
 - **`agents/predict.py`** - CLI entrypoint for loading and running a saved model.
 
-- **`tools/characterize_system.py`** - Standalone simulation tool for parameter identification. Reads a TOML config, patches the XML model in memory, runs a parameterized simulation, and outputs CSV/plots/video. Does not use the Gymnasium env.
+- **`tools/characterize_system.py`** - Standalone simulation tool. Reads a TOML config, patches the XML model in memory with the experimentally-identified parameters, runs a parameterized simulation, and outputs CSV/plots/video. Does not use the Gymnasium env. This is the simulation runner; the sim-vs-real comparison and all analysis live in the thesis repo, not here.
 
-- **`tools/compare_step_response.py`** - Compares a real hardware step-response CSV against the MuJoCo simulation. Extracts ωn and ζ via log-decrement from both signals and prints an error table. `--config` is optional: without it, physical parameters are taken from validated defaults and the step signal is extracted automatically from the CSV's PWM column. `--output <path>` saves the plot to a custom path; `--output` (no value) skips the plot entirely.
-
-- **`tools/visualize_step_response.py`** - Interactive 3D visualizer for the STEP_1023_100 experiment. Opens a MuJoCo viewer window and shows the comparison plot when done. Use `--speed` to control playback rate (default 3.0×). Requires a display; on macOS use `mujoco_viewer.MujocoViewer` — do not use `mujoco.viewer.launch_passive` without `mjpython`.
+- **`tools/visualize_step_response.py`** - Interactive 3D visualizer for the STEP_1023_100 experiment. Opens a MuJoCo viewer window to watch the model's behavior. Use `--speed` to control playback rate (default 3.0×). Requires a display; on macOS use `mujoco_viewer.MujocoViewer` — do not use `mujoco.viewer.launch_passive` without `mjpython`.
 
 - **`scripts/`** - Manual validation scripts (`random_episode_test.py`, `max_voltage_test.py`). Run interactively with `--xml models/pendulum_high_quality.xml`; require a display (not headless).
 
@@ -88,43 +86,35 @@ Feature extraction lives in `ObservationEncoder` (`gym_envs/observation.py`), sh
 
 Training runs save to `results/run_N/` where N is auto-incremented. Each run contains: `model_final.zip`, `best_model.zip`, `train_monitor.csv`, `val_monitor.csv`, TensorBoard event files, and learning curve PNGs.
 
-## Sim-to-Real Validation: STEP_1023_100
+## Sim-to-Real: STEP_1023_100
 
-The reference experiment applies a 100 ms voltage pulse (PWM 1023, ~5 V) to the motor and records the free oscillation of the pendulum. It is the ground truth for validating that MuJoCo parameters match real hardware.
+The model's physical parameters are taken from bench identification on the real hardware, not tuned to match outputs. The STEP_1023_100 experiment (a 100 ms PWM-1023 pulse followed by free oscillation) is the reference used **in the thesis repo** to validate that the model, built from those measured values, reproduces the real behavior.
 
 - Config: `configs/sim_to_real_validation.toml`
 - XML model: `models/pendulum_high_quality.xml`
-- Sim output: `data/step_1023_100/`
-- Real data: `/Users/felipe/Documents/Tesis/Informe-Final/notes/experimento-validacion-sim-real/`
-- Full documentation: `.../experimento-validacion-sim-real/README.md`
+- Sim output (CSV): `data/step_1023_100/`
+- Real data + comparison/analysis: `/Users/felipe/Documents/Tesis/Informe-Final/notes/experimento-validacion-sim-real/`
 
-**Critical parameter — do not change without re-validating:**
+**Workflow:** run `characterize_system.py` here to generate the sim CSV, then run the comparison script in the thesis repo against the real CSV. No comparison or analysis is done in this repo.
+
+**Experimentally-identified parameters transferred into the model:**
+
+- `encoder_damping = 3.01e-4` N·m·s/rad — the pendulum's viscous friction b₂, identified by log-decrement on the real free oscillation (thesis T13). In MuJoCo, joint `damping` is exactly the viscous coefficient, so this is a direct transfer.
+- Motor parameters (`gainprm`, `biasprm`, `resistance_ohm = 5.0 Ω`, etc.) — from the motor characterization experiments.
+
+**Critical parameter — do not change without re-checking:**
 
 `_FRICTION_DEFAULTS["joint1_frictionloss"] = 0.02` in `tools/characterize_system.py`.
 
-This value is intentional. It proxies the mechanical resistance of the gearbox reduction that keeps the arm stationary during the pendulum's free oscillation. Without it, the arm drifts slightly and adds spurious damping, which overestimates ζ.
+This is not a tuning fudge: it reproduces the real boundary condition. The gearbox static friction (0.159 N·m ≫ the ~6 mN·m coupling torque) holds the arm stationary during the pendulum's free oscillation. Without it the arm drifts and adds spurious damping to the pendulum. 0.02 is enough to block the arm with margin, without affecting the active-step dynamics.
 
-**Run the interactive visualizer:**
+**Watch the model behave (no analysis):**
 
 ```bash
 python tools/visualize_step_response.py --speed 3.0
 ```
 
-**Run the sim-vs-real comparison:**
-
-```bash
-python tools/compare_step_response.py --real <ruta_al_CSV_real>
-```
-
-**Validated results (June 2025):**
-
-| Metric | Real | Sim | Error |
-|--------|------|-----|-------|
-| ωn (rad/s) | 6.261 | 6.255 | 0.09% |
-| ζ | 0.01140 | 0.01152 | 1.07% |
-| Amplitude ratio | 1.0 | ~0.94 | ~6% |
-
-Rm updated to 5.0 Ω (midpoint between 4.808 Ω measured at 5V and 5.5 Ω measured at 12V, consistent with voltmeter measurement between terminals). Expected to reduce the ~6% amplitude deficit to ~3%.
+Rm updated to 5.0 Ω (midpoint between 4.808 Ω measured at 5V and 5.5 Ω measured at 12V, consistent with voltmeter measurement between terminals). The residual ~2% amplitude excess in cycle 1 comes from the motor model over-predicting arm velocity at step end, not from damping.
 
 ## GUI Monitor architecture
 
