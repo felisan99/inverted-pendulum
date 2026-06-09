@@ -18,5 +18,4 @@ __pycache__/
 images/
 results/
 
-# Modelo
-model
+rl_models
