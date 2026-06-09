@@ -1,0 +1,26 @@
+# STEP_1023_3000 sim-to-real validation experiment.
+# Voltage pulse of 3000 ms at 12 V, total duration 12 s.
+# Mirrors the real bench experiment STEP_1023_3000_20260519_180719_pendulo_L.csv
+# (pendulo largo + attachment, m2 = 0.034 kg, l2 = 0.2149 m).
+# Parameters from characterize_system.py defaults (post-T14: encoder_damping = 3.01e-4).
+
+[simulation]
+xml_model    = "models/pendulum_high_quality.xml"
+timestep_sec = 0.001
+duration_sec = 12.0
+
+[initial_conditions]
+motor_position_rad = 0.0
+pendulum_position  = "down"
+
+[input]
+type              = "step"
+amplitude_voltage = 12.0
+start_time_sec    = 0.0
+duration_sec      = 3.0
+
+[output]
+csv_path   = "data/step_1023_3000/step_1023_3000_sim.csv"
+plot_path  = "data/step_1023_3000/step_1023_3000_sim.png"
+show_plot  = false
+save_video = false
