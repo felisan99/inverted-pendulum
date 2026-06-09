@@ -1,0 +1,18 @@
+# PPO training config — non-ideal simulation (matches validated sim_config.toml).
+# Run with: python scripts/train.py --config configs/train_ppo_noisy.toml
+
+[trainer]
+agent_type      = "SAC"
+task            = "equilibrium"
+max_steps       = 2000
+total_timesteps = 500000
+eval_freq       = 10000
+n_eval_episodes = 5
+seed            = 42
+starting_offset = 0.15   # rad — initial pendulum angle range (±). Default 0.4 rad (23°).
+
+[sim_config]
+pend_noise_sigma     = 1.5    # AS5600 magnetic jitter [counts]
+motor_noise_sigma    = 0.0
+sensor_latency_steps = 1      # 1 ms I2C read latency
+dt_jitter_sigma      = 200.0  # FreeRTOS scheduling jitter [µs]
