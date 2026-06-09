@@ -55,6 +55,9 @@ class SimWorker(QObject):
 
         self._reset_flag = False
 
+        self._config_change_flag = False
+        self._pending_config: SimConfig | None = None
+
         self._ctrl_active            = False
         self._ctrl_start_flag        = False
         self._ctrl_stop_flag         = False
@@ -71,6 +74,13 @@ class SimWorker(QObject):
         wall_next     = time.perf_counter()
 
         while self._running:
+
+            if self._config_change_flag:
+                self._config_change_flag = False
+                self._ctrl_active = False
+                self._sim.apply_config(self._pending_config)
+                last_reading = self._sim.reset(pendulum_down=True)
+                wall_next = time.perf_counter()
 
             if self._reset_flag:
                 self._reset_flag  = False
@@ -125,6 +135,15 @@ class SimWorker(QObject):
             slack = wall_next - time.perf_counter()
             if slack > 0:
                 time.sleep(slack)
+
+    @property
+    def current_config(self) -> SimConfig:
+        return self._sim._config
+
+    @Slot(object)
+    def update_sim_config(self, cfg: SimConfig) -> None:
+        self._pending_config     = cfg
+        self._config_change_flag = True
 
     @Slot(int)
     def set_pwm(self, pwm: int) -> None:

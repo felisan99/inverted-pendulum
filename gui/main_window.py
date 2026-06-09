@@ -18,6 +18,7 @@ import pyqtgraph as pg
 from gym_envs.observation import PENDULUM_LSB, MOTOR_LSB
 from gym_envs.pendulum_sim import PWM_MAX, MAX_VOLTAGE
 from gym_envs.policy_controller import ModelController
+from gym_envs.sim_config import SimConfig
 from gui.ring_buffer import RingBuffer
 from gui.workers import SimWorker, RenderWorker, _DATA_EMIT_EVERY
 
@@ -43,6 +44,7 @@ class MainWindow(QMainWindow):
     _send_ctrl_start = Signal()
     _send_ctrl_stop  = Signal()
     _send_disturb    = Signal(float)
+    _send_sim_config = Signal(object)
 
     def __init__(self) -> None:
         super().__init__()
@@ -282,6 +284,50 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(hit_box)
 
+        sim_cfg_box    = QGroupBox("Simulation Config")
+        sim_cfg_layout = QGridLayout(sim_cfg_box)
+
+        self._sim_cfg_path_lbl = QLabel("—")
+        self._sim_cfg_path_lbl.setFont(mono)
+        sim_cfg_layout.addWidget(QLabel("Config:"),        0, 0)
+        sim_cfg_layout.addWidget(self._sim_cfg_path_lbl,   0, 1)
+
+        sim_cfg_layout.addWidget(QLabel("Pend. noise:"),   1, 0)
+        self._sim_pend_spin = QDoubleSpinBox()
+        self._sim_pend_spin.setRange(0.0, 20.0)
+        self._sim_pend_spin.setSingleStep(0.5)
+        self._sim_pend_spin.setDecimals(1)
+        self._sim_pend_spin.setSuffix(" counts")
+        sim_cfg_layout.addWidget(self._sim_pend_spin,      1, 1)
+
+        sim_cfg_layout.addWidget(QLabel("Motor noise:"),   2, 0)
+        self._sim_motor_spin = QDoubleSpinBox()
+        self._sim_motor_spin.setRange(0.0, 20.0)
+        self._sim_motor_spin.setSingleStep(0.5)
+        self._sim_motor_spin.setDecimals(1)
+        self._sim_motor_spin.setSuffix(" counts")
+        sim_cfg_layout.addWidget(self._sim_motor_spin,     2, 1)
+
+        sim_cfg_layout.addWidget(QLabel("Sensor delay:"),  3, 0)
+        self._sim_latency_spin = QSpinBox()
+        self._sim_latency_spin.setRange(0, 50)
+        self._sim_latency_spin.setSuffix(" steps")
+        sim_cfg_layout.addWidget(self._sim_latency_spin,   3, 1)
+
+        sim_cfg_layout.addWidget(QLabel("dt jitter:"),     4, 0)
+        self._sim_jitter_spin = QDoubleSpinBox()
+        self._sim_jitter_spin.setRange(0.0, 2000.0)
+        self._sim_jitter_spin.setSingleStep(50.0)
+        self._sim_jitter_spin.setDecimals(0)
+        self._sim_jitter_spin.setSuffix(" µs")
+        sim_cfg_layout.addWidget(self._sim_jitter_spin,    4, 1)
+
+        btn_apply_cfg = QPushButton("Apply & Reset")
+        btn_apply_cfg.clicked.connect(self._apply_sim_config)
+        sim_cfg_layout.addWidget(btn_apply_cfg,            5, 0, 1, 2)
+
+        layout.addWidget(sim_cfg_box)
+
         btn_reset = QPushButton("Reset simulation")
         btn_reset.clicked.connect(self._reset_sim)
         layout.addWidget(btn_reset)
@@ -303,6 +349,15 @@ class MainWindow(QMainWindow):
         self._send_ctrl_start.connect(self._worker.activate_controller,   Qt.DirectConnection)
         self._send_ctrl_stop.connect(self._worker.deactivate_controller,  Qt.DirectConnection)
         self._send_disturb.connect(self._worker.apply_disturbance,        Qt.DirectConnection)
+        self._send_sim_config.connect(self._worker.update_sim_config,     Qt.DirectConnection)
+
+        cfg = self._worker.current_config
+        self._sim_pend_spin.setValue(cfg.pend_noise_sigma)
+        self._sim_motor_spin.setValue(cfg.motor_noise_sigma)
+        self._sim_latency_spin.setValue(cfg.sensor_latency_steps)
+        self._sim_jitter_spin.setValue(cfg.dt_jitter_sigma)
+        from gui.workers import _SIM_CONFIG_PATH
+        self._sim_cfg_path_lbl.setText(_SIM_CONFIG_PATH.name if _SIM_CONFIG_PATH.exists() else "defaults")
 
         self._render_thread = QThread(self)
         self._render_worker = RenderWorker(self._worker._sim._model, self._worker._snapshot)
@@ -475,6 +530,20 @@ class MainWindow(QMainWindow):
             self._model_status_lbl.setText("Idle")
             self._set_control_active(False)
         self._send_reset.emit()
+
+    def _apply_sim_config(self) -> None:
+        cfg = SimConfig(
+            pend_noise_sigma=self._sim_pend_spin.value(),
+            motor_noise_sigma=self._sim_motor_spin.value(),
+            sensor_latency_steps=self._sim_latency_spin.value(),
+            dt_jitter_sigma=self._sim_jitter_spin.value(),
+        )
+        self._ring.clear()
+        if self._worker._ctrl_active:
+            self._ctrl_status_lbl.setText("Idle")
+            self._model_status_lbl.setText("Idle")
+            self._set_control_active(False)
+        self._send_sim_config.emit(cfg)
 
     def closeEvent(self, event):
         self._timer.stop()

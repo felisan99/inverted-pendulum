@@ -103,6 +103,10 @@ class PendulumSim:
             self._render()
         return self._read_sensors()
 
+    def apply_config(self, cfg: SimConfig) -> None:
+        self._config = cfg
+        self._latency_buf = deque(maxlen=max(cfg.sensor_latency_steps + 1, 1))
+
     def apply_disturbance(self, delta_rad: float) -> None:
         """Instantly displace the pendulum angle, as if someone hit it.
 
