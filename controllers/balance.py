@@ -59,11 +59,11 @@ _CONFIG_PATH    = Path(__file__).resolve().parent.parent / "configs" / "control_
 
 class Controller:
 
-    Kp    =  8621.6  # [PWM / rad]         pendulum angle           (LQR K_phi)
+    Kp    =  9938.3  # [PWM / rad]         pendulum angle           (LQR K_phi)
     Ki    =     0.0  # [PWM / (rad·s)]     pendulum angle integral
-    Kd    =  1295.1  # [PWM / (rad/s)]     pendulum angular velocity (LQR K_phi_dot)
+    Kd    =  1516.3  # [PWM / (rad/s)]     pendulum angular velocity (LQR K_phi_dot)
     Ka    =  -254.6  # [PWM / rad]         arm position             (LQR K_theta1, negative)
-    Kb    =  -215.5  # [PWM / (rad/s)]     arm angular velocity      (LQR K_theta1_dot, negative)
+    Kb    =  -221.9  # [PWM / (rad/s)]     arm angular velocity      (LQR K_theta1_dot, negative)
     i_max =    0.5   # anti-windup clamp [rad·s]
 
     def __init__(self) -> None:
