@@ -49,7 +49,7 @@ _MOTOR_DEFAULTS: dict = {
     "max_voltage": 12.0,
     "gainprm": 0.2184,
     "biasprm": -0.2385,
-    "stall_torque_nm": 2.540,
+    "stall_torque_nm": 2.621,   # Keff*PWM_max = Kt_sal*Vcc/Rm (modelo de control, R_m=5.0)
     "resistance_ohm": 5.0,
     "torque_constant": 1.092,
     "back_emf_constant": 1.092,
