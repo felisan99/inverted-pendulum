@@ -44,18 +44,18 @@
                   J1zz = 8.382e-6 kg·m²  about CDM (perpendicular axes, Steiner-corrected by MuJoCo)
 
                 Armature = reflected rotor inertia = J_total - J1,motor
-                  J_total   = tau_rise * (b_arm + K_be) = 0.038 * 0.2331 = 8.858e-3 kg·m²
+                  J_total   = tau_rise * (b_arm + K_be) = 0.038 * 0.24056 = 9.141e-3 kg·m²
                   J1,motor  = J1zz + m1*l1²             = 6.12e-5 kg·m²
-                  armature  = 8.858e-3 - 6.12e-5        = 8.797e-3 kg·m²
+                  armature  = 9.141e-3 - 6.12e-5        = 9.080e-3 kg·m²
 
-                Damping  = b_arm = 2.0e-3 N·m·s/rad  (viscous, identified from step response
-                           without pendulum: b_arm = K_eff/K - K_be = 0.23305 - 0.23107)
+                Damping  = b_arm = 2.059e-3 N·m·s/rad  (viscous, identified from step response
+                           without pendulum: b_arm = K_eff/K - K_be = 0.24056 - 0.23849)
 
                 Frictionloss = 0.0  (kinetic Coulomb friction at operating speed is negligible)
                   The sweep experiment (experimento-relacion-pwm-velocidad) showed a STATIC
                   friction threshold at 64 PWM (sustentation FWD), implying tau_static ≈ 0.159 N·m.
                   However, the step-response identification at omega_ss = 10.899 rad/s implies
-                  kinetic frictionloss ≈ 0 (balance check: gainprm*V - K_be*omega - b_arm*omega = 0.001 N·m).
+                  kinetic frictionloss ≈ 0 (balance check: gainprm*V - K_be*omega - b_arm*omega ≈ 0 N·m).
                   MuJoCo frictionloss is velocity-independent (Coulomb model) and cannot
                   simultaneously represent static (0.159 N·m) and kinetic (~0) regimes.
                   For the RL operating regime (moderate-to-high motor speeds), frictionloss=0
@@ -63,8 +63,8 @@
             -->
             <body name="link1" pos="0 0 0">
                 <joint name="joint1" type="hinge" axis="0 0 1"
-                       armature="8.797e-3"
-                       damping="2.0e-3"
+                       armature="9.080e-3"
+                       damping="2.059e-3"
                        frictionloss="0.0"/>
                 <inertial pos="0.049 0 0" mass="0.022"
                           diaginertia="1e-7 8.382e-6 8.382e-6"/>
@@ -91,11 +91,11 @@
                       gamma = J2zz + m2*l2² = 2.550e-4 + 0.034*0.2149² = 1.825e-3 kg·m²  (pendulum pivot inertia)
                       delta = g*m2*l2       = 9.81*0.034*0.2149         = 7.168e-2 N·m    (gravitational torque)
 
-                    Damping = b2 = 2*zeta*sqrt(gamma*delta), zeta=0.0114 → 2.60e-4 N·m·s/rad
+                    Damping = b2 = 2*zeta*sqrt(gamma*delta), zeta=0.0131 → 3.00e-4 N·m·s/rad
                 -->
                 <body name="pendulum" pos="0.0676 0 0">
                     <joint name="encoder_joint" type="hinge" axis="1 0 0"
-                           damping="2.60e-4"/>
+                           damping="3.00e-4"/>
                     <inertial pos="0 0 0.2149" mass="0.034"
                               diaginertia="2.550e-4 2.550e-4 1e-7"/>
 
