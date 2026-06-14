@@ -11,6 +11,7 @@ dependencies = [
     "mujoco>=3.4.0",
     "mujoco-python-viewer>=0.1.4",
     "pyqtgraph>=0.13",
+    "pyserial>=3.5",
     "pyside6>=6.7",
     "stable-baselines3>=2.8.0",
     "tensorboard>=2.20.0",
