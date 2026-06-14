@@ -42,7 +42,7 @@ class StateSnapshot:
 class SimWorker(QObject):
     """Runs PendulumSim at 1 kHz in a background QThread."""
 
-    data_ready = Signal(int, int, int, int)   # t_us, motor_enc, pend_enc, pwm
+    data_ready = Signal("qlonglong", int, int, int)   # t_us (64-bit), motor_enc, pend_enc, pwm
     ctrl_error = Signal(str)             # controller compute() raised
 
     def __init__(self) -> None:

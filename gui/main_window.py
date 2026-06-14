@@ -93,12 +93,18 @@ class MainWindow(QMainWindow):
         self._pend_plot  = pg.PlotWidget(title="Pendulum angle  (upright = 0°)")
         self._pend_plot.setLabel("left", "Angle", units="deg")
         self._pend_plot.setLabel("bottom", "Time", units="s")
+        self._pend_plot.setYRange(-180.0, 180.0, padding=0)
+        self._pend_plot.setMouseEnabled(x=False, y=False)
+        self._pend_plot.addLine(y=0.0, pen=pg.mkPen("#ffffff", width=1, style=Qt.DashLine))
         self._pend_curve = self._pend_plot.plot(pen=pg.mkPen("#4fc3f7", width=1.5))
         self._pend_plot.showGrid(x=True, y=True, alpha=0.3)
 
-        self._arm_plot   = pg.PlotWidget(title="Arm position  (cumulative)")
+        self._arm_plot   = pg.PlotWidget(title="Arm position  (wrapped to ±180°)")
         self._arm_plot.setLabel("left", "Angle", units="deg")
         self._arm_plot.setLabel("bottom", "Time", units="s")
+        self._arm_plot.setYRange(-180.0, 180.0, padding=0)
+        self._arm_plot.setMouseEnabled(x=False, y=False)
+        self._arm_plot.addLine(y=0.0, pen=pg.mkPen("#ffffff", width=1, style=Qt.DashLine))
         self._arm_curve  = self._arm_plot.plot(pen=pg.mkPen("#a5d6a7", width=1.5))
         self._arm_plot.showGrid(x=True, y=True, alpha=0.3)
 
@@ -106,6 +112,8 @@ class MainWindow(QMainWindow):
         self._pwm_plot.setLabel("left", "PWM")
         self._pwm_plot.setLabel("bottom", "Time", units="s")
         self._pwm_plot.setYRange(-PWM_MAX, PWM_MAX, padding=0.05)
+        self._pwm_plot.setMouseEnabled(x=False, y=False)
+        self._pwm_plot.addLine(y=0.0, pen=pg.mkPen("#ffffff", width=1, style=Qt.DashLine))
         self._pwm_curve  = self._pwm_plot.plot(pen=pg.mkPen("#ffb74d", width=1.5))
         self._pwm_plot.showGrid(x=True, y=True, alpha=0.3)
 
@@ -368,15 +376,16 @@ class MainWindow(QMainWindow):
         self._thread.start()
         self._render_thread.start()
 
-    @Slot(int, int, int, int)
+    @Slot("qlonglong", int, int, int)
     def _on_data(self, t_us: int, motor_enc: int, pend_enc: int, pwm: int) -> None:
         pend_deg = pend_enc * _PEND_DEG_PER_COUNT
         if pend_deg > 180.0:
             pend_deg -= 360.0
+        arm_deg = (motor_enc * _ARM_DEG_PER_COUNT + 180.0) % 360.0 - 180.0
         self._ring.append(
             t_us * 1e-6,
             pend_deg,
-            motor_enc * _ARM_DEG_PER_COUNT,
+            arm_deg,
             float(pwm),
         )
 
