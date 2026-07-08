@@ -1,6 +1,10 @@
-# Active control-loop profile loaded by controllers/pid_balance.py by convention.
-# Edit this file to change the control rate / filter; defaults below reproduce the
-# original 1 kHz behaviour. See gym_envs/control_config.py.
+# Active control-loop profile loaded by the classical controllers by convention.
+# This profile targets the PC<->ESP32 serial link: the round-trip is ~1.6 ms, so a
+# 1 kHz control rate is faster than the channel can carry. We run at 250 Hz (4 ms).
+# Larger N reduces velocity noise and motor chatter; group delay = (N-1)/2 * period.
+# Verified in scripts/verify_serial_balance_sim.py: stable up to N=15 under modeled
+# serial jitter/latency. Raising frequency does NOT help — smaller dt means more
+# velocity noise per sample. See gym_envs/control_config.py.
 [control_config]
-sample_freq_hz   = 1000.0   # control rate with zero-order hold (capped by the 1 kHz physics rate)
-filter_cutoff_hz = 26.0     # EMA derivative-filter cutoff; alpha = 1 - exp(-2*pi*fc/fs)
+sample_freq_hz   = 250.0    # control rate with zero-order hold (4 ms; serial round-trip ~1.6 ms)
+sg_window        = 11       # Savitzky-Golay window (20 ms group delay); sim: -37% sign/s vs N=7

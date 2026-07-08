@@ -18,8 +18,12 @@ from __future__ import annotations
 
 import argparse
 import statistics
+import sys
 import time
 from collections import deque
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def main() -> None:
@@ -29,30 +33,42 @@ def main() -> None:
     p.add_argument("--pwm", type=int, default=0, help="constant PWM to apply (default 0)")
     p.add_argument("--hz", type=float, default=10.0, help="print rate")
     p.add_argument("--window", type=int, default=30, help="samples for the median")
+    p.add_argument("--duration", type=float, default=0.0, help="seconds (0 = until Ctrl-C)")
     args = p.parse_args()
 
     from gym_envs.hardware_backend import HardwareBackend
 
     backend = HardwareBackend(args.port, baudrate=args.baud)
     pend_hist: deque[int] = deque(maxlen=args.window)
+    pend_all: list[int] = []
     period = 1.0 / args.hz
 
     backend.reset()
     print("Reading sensors (Ctrl-C to stop). Hold the pendulum upright to read its count.\n")
     print(f"{'t_us':>12}  {'pend_enc':>8}  {'pend_median':>11}  {'motor_enc':>9}  {'pwm':>5}")
+    t0 = time.perf_counter()
     try:
         while True:
             r = backend.step(args.pwm)
             pend_hist.append(r.pend_enc)
+            pend_all.append(r.pend_enc)
             median = int(statistics.median(pend_hist))
             print(f"{r.t_us:>12}  {r.pend_enc:>8}  {median:>11}  {r.motor_enc:>9}  {args.pwm:>5}",
                   end="\r", flush=True)
+            if args.duration and (time.perf_counter() - t0) >= args.duration:
+                break
             time.sleep(period)
     except KeyboardInterrupt:
+        pass
+    finally:
         if pend_hist:
             print(f"\n\nSuggested PEND_ZERO_OFFSET (median pend_enc): {int(statistics.median(pend_hist))}")
             print("Set it in backend-esp32/src/pins.h and re-flash. Then hanging should read ~2048.")
-    finally:
+        if len(pend_all) > 2:
+            std = statistics.pstdev(pend_all)
+            p2p = max(pend_all) - min(pend_all)
+            print(f"pend_enc noise over {len(pend_all)} samples (pwm={args.pwm}): "
+                  f"std={std:.2f} counts, peak-to-peak={p2p} counts")
         backend.close()
 
 

@@ -21,8 +21,8 @@ ESP32 firmware API: a signed 10-bit PWM goes in, a raw `SensorReading(t_us,
 motor_enc, pend_enc)` comes out.
 
 - `PendulumSim` satisfies it by duck typing (it does not inherit anything).
-- A future `HardwareBackend` (link to the real ESP32) would satisfy the same
-  contract, and could be injected into `PendulumEnv` unchanged.
+- `HardwareBackend` (`hardware_backend.py`, link to the real ESP32) satisfies the
+  same contract and can be injected into `PendulumEnv` unchanged.
 
 `SensorReading` lives here (not in `pendulum_sim.py`) because it is the shared wire
 type. Import it from `gym_envs.backend`.
@@ -95,7 +95,7 @@ derivative-filter cutoff). The EMA `alpha` is a derived property,
 `1 - exp(-2*pi*fc/fs)`, so the cutoff is invariant when the rate changes. Defaults
 (1000 Hz, 26 Hz) reproduce the original per-tick behaviour. `from_toml(path)` reads a
 `[control_config]` section; profiles live in `configs/control_config.toml` (active) and
-`configs/control_250hz.toml`. Loaded once by `controllers/pid_balance.py` at construction.
+`configs/control_250hz.toml`. Loaded once by `controllers/balance.py` at construction.
 
 ## The RL environment: `pendulum_env.py`
 
@@ -147,7 +147,7 @@ matches too. This is the sim-side stand-in for what a real ESP32 deployment woul
   `gym_envs.backend`).
 - `test/test_env_smoke.py` — env contract; termination tests use a scripted
   `FakeBackend` (implements the Protocol) instead of poking MuJoCo internals.
-- `test/test_pid_balance.py` — runs `controllers/pid_balance.py` against the ideal
+- `test/test_pid_balance.py` — runs `controllers/balance.py` against the ideal
   `PendulumSim`; guards that the equilibrium path is unchanged. Overrides the module's
   `_CONFIG_PATH` so the 1 kHz cases use `ControlConfig()` defaults and one case loads
   `configs/control_250hz.toml` to cover the zero-order-hold decimation path.

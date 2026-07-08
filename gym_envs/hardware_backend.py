@@ -14,6 +14,8 @@ without hardware or even without pyserial installed.
 
 from __future__ import annotations
 
+import time
+
 from gym_envs.backend import SensorReading
 from gym_envs.serial_protocol import (
     CMD_RESET,
@@ -24,6 +26,7 @@ from gym_envs.serial_protocol import (
 )
 
 _DEFAULT_BAUD = 921600
+_BOOT_SETTLE_S = 0.3   # opening the port toggles DTR/RTS and reboots the ESP32
 
 
 class HardwareBackend:
@@ -41,6 +44,8 @@ class HardwareBackend:
             import serial  # lazy: only needed for a real link
 
             transport = serial.Serial(port, baudrate=baudrate, timeout=timeout)
+            time.sleep(_BOOT_SETTLE_S)
+            transport.reset_input_buffer()
         self._io = transport
 
     def reset(self, *args, **kwargs) -> SensorReading:

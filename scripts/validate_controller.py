@@ -9,7 +9,7 @@ compute(pend_enc, motor_enc, t_us) call), so a PASS here predicts the GUI.
 
 Usage:
     python scripts/validate_controller.py
-    python scripts/validate_controller.py --controller controllers/pid_balance.py --perturb-deg 5 --seconds 5
+    python scripts/validate_controller.py --controller controllers/balance.py --perturb-deg 5 --seconds 5
     python scripts/validate_controller.py --gain-scale 0.25
 """
 
@@ -97,7 +97,7 @@ def direction_probe(perturb_rad: float, k_test: float = 2000.0, ms: int = 150):
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--controller", default="controllers/pid_balance.py",
+    ap.add_argument("--controller", default="controllers/balance.py",
                     help="path to a script with a Controller class")
     ap.add_argument("--perturb-deg", type=float, default=5.0,
                     help="initial pendulum angle from upright [deg]")

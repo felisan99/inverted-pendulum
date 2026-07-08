@@ -37,7 +37,7 @@ have a single `[control_config]` section parsed by `ControlConfig.from_toml()`.
 Two knobs: `sample_freq_hz` (control rate with zero-order hold; capped by the 1 kHz
 physics rate) and `filter_cutoff_hz` (EMA derivative-filter cutoff; the alpha is
 derived as `1 - exp(-2*pi*fc/fs)`, so the cutoff stays fixed when the rate changes).
-Loaded by the classical controllers (`controllers/pid_balance.py`) at construction.
+Loaded by the classical controllers (`controllers/balance.py`, `controllers/balance_SG.py`) at construction.
 
 - `control_config.toml` is the local active profile; defaults (1000 Hz, 26 Hz)
   reproduce the original 1 kHz behaviour.

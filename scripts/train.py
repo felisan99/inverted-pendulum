@@ -2,8 +2,8 @@
 CLI entry point for RL training.
 
 Usage:
-    python scripts/train.py --config configs/train_ppo_noisy.toml
-    python scripts/train.py --config configs/train_ppo_noisy.toml --resume results/run_1/model_final.zip
+    python scripts/train.py --config configs/train_sac_noisy.toml
+    python scripts/train.py --config configs/train_sac_noisy.toml --resume results/run_1/model_final.zip
 """
 
 from __future__ import annotations

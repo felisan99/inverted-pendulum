@@ -61,7 +61,19 @@ python -m agents.predict --model-path results/run_N/best_model.zip --xml-file mo
 
 - **`tools/visualize_step_response.py`** - Interactive 3D visualizer for the STEP_1023_100 experiment. Opens a MuJoCo viewer window to watch the model's behavior. Use `--speed` to control playback rate (default 3.0×). Requires a display; on macOS use `mujoco_viewer.MujocoViewer` — do not use `mujoco.viewer.launch_passive` without `mjpython`.
 
-- **`scripts/`** - Manual validation scripts (`random_episode_test.py`, `max_voltage_test.py`). Run interactively with `--xml models/pendulum_high_quality.xml`; require a display (not headless).
+- **`scripts/`** - Manual validation and hardware-runner scripts. Sim-only (no firmware, no display required unless noted):
+  - `random_episode_test.py`, `max_voltage_test.py` - run interactively with `--xml models/pendulum_high_quality.xml`; require a display.
+  - `train.py` - CLI entry point for RL training (`python scripts/train.py --config configs/train_sac_noisy.toml`); wraps `agents.trainer.RLTrainer` (that module has no `__main__`, so training must go through this script, not `python -m agents.trainer`).
+  - `validate_controller.py` - headless PASS/FAIL harness for a `Controller` script against `PendulumSim`, mirrors the GUI's load path.
+  - `verify_serial_balance_sim.py` - sim-only study of the PC-serial jitter's effect on `balance_SG`'s velocity estimator (design justification, not a hardware test).
+  - `plot_onboard_balance.py` - offline plotting of a `data/onboard_balance*.csv`; no serial connection.
+
+  Hardware scripts talk to the ESP32 over serial and require a specific firmware image already flashed from `/Users/felipe/Developer/tests-tesis/`:
+  - `run_hardware_balance.py`, `read_sensors.py` - require **`backend-esp32`** (serial-slave protocol: host computes control, ESP32 relays raw 16-byte `SensorReading` frames via `HardwareBackend`).
+  - `record_onboard_telemetry.py` - requires **`realimentacion-de-estados`** (onboard controller: the ESP32 runs the whole 1 kHz control loop itself and only streams 39-byte telemetry frames + accepts single-byte commands `G`/`S`/`R`/`A`).
+  - `mirror_onboard_telemetry.py` - same protocol/CSV output as `record_onboard_telemetry.py`, requires **`realimentacion-de-estados`**; additionally opens a `mujoco_viewer.MujocoViewer` window on `models/pendulum_high_quality.xml` (`--xml` to override) and drives it from live telemetry (`qpos`/`qvel` set from `pend_enc`/`motor_enc`/`phi_d`/`omega`, then `mj_forward`, never `mj_step`) so you can watch a live 3D mirror of the hardware while recording. Serial reading runs on a background thread and the render loop stays on the main thread (GLFW/`mujoco_viewer` requires the main thread on macOS — confirmed creating it off-thread crashes the process, the mirror image of why `gui/workers.py` uses the thread-safe offscreen `mujoco.Renderer` instead), so a slow render call (~4-16 ms, same cost class as the GUI's measured `mujoco.Renderer` benchmark) never stalls ingestion of the ~1 kHz telemetry and desyncs the frame parser. Render is throttled to 30 Hz via a `threading.Lock`-protected snapshot. `--no-viz` runs it identically to the plain recorder for headless use.
+
+  These two firmware images use incompatible wire protocols (see `gym_envs/serial_protocol.py` docstring vs `realimentacion-de-estados/src/protocol.h`) — running a script against the wrong one fails with `ProtocolError` or produces garbage. Check which firmware is currently on the board before running a hardware script; when in doubt, `pio run -t upload` from the correct project directory first.
 
 - **`models/`** - MuJoCo XML model files. `pendulum_high_quality.xml` is the validated model with full visual shaders. `pendulum_low_quality.xml` has the same physics but minimal visuals (no shadows, no MSAA, no skybox) for better GUI framerate.
 
@@ -167,7 +179,7 @@ class Controller:
 
 Loading flow: the user selects a script file and an initial perturbation angle, then clicks **Start control**. `SimWorker` re-imports the module fresh (so edits take effect without restarting), calls `reset()`, then routes every `step()` call through `compute()` instead of the manual PWM flag. If `compute()` raises, the worker catches the exception, sets PWM to 0, and emits an error string to the status label. **Stop control** returns to manual mode.
 
-The script file and `Controller` class live entirely outside this repo; no imports from the project are needed. See `docs/custom-controller-tutorial.md` for the full interface contract, sensor reference, and an example (`controllers/pid_example.py`).
+The script file and `Controller` class live entirely outside this repo; no imports from the project are needed. See `docs/custom-controller-tutorial.md` for the full interface contract, sensor reference, and an example (`controllers/example.py`).
 
 **Trained model system**
 
@@ -204,3 +216,18 @@ The `README.md` should cover at minimum: the config used (or inline parameters i
 ## Empirical Test Results
 
 Real hardware test data and empirical measurements are stored outside this repository at `/Users/felipe/Documents/Tesis/Informe-Final`. Consult that directory when you need to compare simulation behavior against real bench results or when working on parameter identification.
+
+## Validated Hardware Balance Setting
+
+Requires the `backend-esp32` serial-slave firmware flashed (not `realimentacion-de-estados`) and `controllers/balance_SG.py` as the host-side controller (LQR baseline: Kp=9938.3, Kd=1516.3, Ka=-254.6, Kb=-221.9).
+
+```bash
+python scripts/run_hardware_balance.py --port /dev/cu.usbserial-0001 --duration 50 \
+  --gain-scale 0.35 --kd-scale 0.30 --no-arm-control --csv data/balance_noKa_gs035_kd030.csv
+```
+
+Effective gains: Kp=3478.4, Kd=159.2, Ka=0.0 (arm-position control disabled), Kb=-77.7.
+
+Result (2026-07-06): held balance stably for the full run until manually interrupted (Ctrl-C, no divergence). PWM saturation 1.7%, sign changes 2.9/s, PWM rms 205.2. Term contributions: term_p rms=125.5 (max 1510.0), term_d rms=86.5 (max 1099.0), term_b rms=151.8 (max 811.8).
+
+**Data caveat:** the run was saved to `data/balance_noKa_gs035_kd035.csv` (38241 rows) — the filename says kd-scale=0.35 but the actual run used kd-scale=0.30, and this overwrote a prior run that legitimately used kd-scale=0.35. The filename no longer matches its contents; treat that CSV as the kd-scale=0.30 result. Name CSVs to match the actual flags used to avoid this.

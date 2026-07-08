@@ -1,0 +1,16 @@
+# PPO training config — ideal (noise-free) simulation.
+# Simplest setup to learn to balance the pendulum in sim.
+# Run with: python scripts/train.py --config configs/train_ppo_ideal.toml
+
+[trainer]
+agent_type      = "PPO"
+task            = "equilibrium"
+max_steps       = 2000
+total_timesteps = 300000
+eval_freq       = 10000
+n_eval_episodes = 5
+seed            = 42
+starting_offset = 0.2    # rad — initial pendulum angle range (±). ~11°.
+
+# No [sim_config] section: every non-ideality defaults to 0.0
+# (no encoder noise, no I2C latency, no FreeRTOS jitter) => ideal sim.

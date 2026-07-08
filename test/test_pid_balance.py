@@ -7,7 +7,7 @@ import pytest
 from gym_envs.observation import pend_to_rad
 from gym_envs.pendulum_sim import PendulumSim
 
-_CONTROLLER_PATH = Path(__file__).resolve().parent.parent / "controllers" / "pid_balance.py"
+_CONTROLLER_PATH = Path(__file__).resolve().parent.parent / "controllers" / "balance.py"
 _CONFIGS_DIR = Path(__file__).resolve().parent.parent / "configs"
 
 
